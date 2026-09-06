@@ -1,10 +1,10 @@
-# Tawoos Bill PWA
+# نظام الفواتير PWA
 
 هذا تطبيق فواتير عربي يعمل كـ PWA باستخدام HTML وCSS وJavaScript فقط. يمكن رفع محتويات المجلد إلى GitHub Pages أو Netlify أو أي خادم static يدعم HTTPS. بعد أول فتح، يخزن Service Worker ملفات التطبيق والمنتجات ليعمل التطبيق دون اتصال.
 
 ## التشغيل
 
-ارفع جميع الملفات الموجودة في المجلد نفسه، خصوصًا `index.html` و`app.js` و`style.css` و`manifest.json` و`sw.js` و`products.json` و`customers.json` و`customer_history.json` و`logo.png`. افتح الرابط في Chrome أو Edge، ثم اختر تثبيت التطبيق من زر التثبيت أو من قائمة المتصفح.
+ارفع جميع الملفات الموجودة في المجلد نفسه، خصوصًا `index.html` و`app.js` و`style.css` و`manifest.json` و`sw.js` و`products.json` و`customers.json` و`customer_history.json`. افتح الرابط في Chrome أو Edge، ثم اختر تثبيت التطبيق من زر التثبيت أو من قائمة المتصفح.
 
 ## الوظائف الحالية
 

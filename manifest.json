@@ -1,1 +1,13 @@
-{"name":"Tawoos Bill","short_name":"Tawoos Bill","description":"نظام فواتير يعمل دون اتصال","start_url":"./","display":"standalone","background_color":"#f4f7fb","theme_color":"#12355b","dir":"rtl","lang":"ar","icons":[{"src":"logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
+{
+  "name": "نظام الفواتير",
+  "short_name": "الفواتير",
+  "description": "نظام فواتير يعمل دون اتصال",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0b0b",
+  "theme_color": "#0b0b0b",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": []
+}

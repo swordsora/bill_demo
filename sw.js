@@ -1,1 +1,70 @@
-const CACHE='tawoos-bill-v48';const ASSETS=['./','./index.html','./style.css','./central-config.js','./app.js?rev=48','./search-worker.js','./manifest.json','./logo.png','./splash.png','./splash-icon.png','./fonts/cairo-400.ttf','./fonts/cairo-600.ttf','./fonts/cairo-700.ttf','./fonts/cairo-800.ttf','./vendor/zxing-browser.min.js','./vendor/jsQR.js','./vendor/mdb-reader.min.js'];self.addEventListener('install',event=>{event.waitUntil((async()=>{const cache=await caches.open(CACHE);await Promise.all(ASSETS.map(async asset=>{try{const response=await fetch(asset,{cache:'no-cache'});if(response.ok)await cache.put(asset,response)}catch(error){}}));await self.skipWaiting()})())});self.addEventListener('activate',event=>{event.waitUntil((async()=>{const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith('tawoos-bill-')&&name!==CACHE).map(name=>caches.delete(name)));await self.clients.claim()})())});self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting()});self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;const request=event.request;event.respondWith((async()=>{const cached=await caches.match(request);if(cached)return cached;try{const response=await fetch(request);if(response&&response.ok&&new URL(request.url).origin===self.location.origin){const cache=await caches.open(CACHE);await cache.put(request,response.clone())}return response}catch(error){if(request.mode==='navigate')return caches.match('./index.html');return new Response('',{status:503,statusText:'Offline'})}})())});
+const CACHE = 'mall-aqrab-pwa-v50';
+const ASSETS = [
+  './',
+  './index.html',
+  './style.css',
+  './central-config.js',
+  './app.js?rev=50',
+  './search-worker.js',
+  './manifest.json',
+  './logo.svg',
+  './logo.png',
+  './icon-192.png',
+  './icon-512.png',
+  './splash.png',
+  './splash-icon.png',
+  './fonts/cairo-400.ttf',
+  './fonts/cairo-600.ttf',
+  './fonts/cairo-700.ttf',
+  './fonts/cairo-800.ttf',
+  './vendor/zxing-browser.min.js',
+  './vendor/jsQR.js',
+  './vendor/mdb-reader.min.js'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(ASSETS.map(async asset => {
+      try {
+        const response = await fetch(asset, { cache: 'no-cache' });
+        if (response.ok) await cache.put(asset, response);
+      } catch (_) {}
+    }));
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names
+      .filter(name => name.startsWith('mall-aqrab-pwa-') && name !== CACHE)
+      .map(name => caches.delete(name)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+  const request = event.request;
+  event.respondWith((async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    try {
+      const response = await fetch(request);
+      if (response?.ok && new URL(request.url).origin === self.location.origin) {
+        const cache = await caches.open(CACHE);
+        await cache.put(request, response.clone());
+      }
+      return response;
+    } catch (_) {
+      if (request.mode === 'navigate') return caches.match('./index.html');
+      return new Response('', { status: 503, statusText: 'Offline' });
+    }
+  })());
+});
