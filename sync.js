@@ -1,4 +1,4 @@
-const SYNC_QUEUE_KEY = 'tawoos:pwa:sync-queue';
+const SYNC_QUEUE_KEY = 'bill:pwa:sync-queue';
 
 export function syncConfig(config = {}) {
   return {
