@@ -1,154 +1,3686 @@
-const IDB_NAME='bill-storage';const IDB_VERSION=2;const IDB_STORE='kv';const IDB_FILE_STORE='database-files';const IDB_META_STORE='database-meta';let idbDatabase=null;const storageCache=new Map();let idbReady=false;function legacyGet(key){try{return window.localStorage.getItem(key)}catch(e){return null}}function legacyKeys(){try{return Object.keys(window.localStorage)}catch(e){return []}}function openIndexedDb(){return new Promise((resolve,reject)=>{if(!('indexedDB'in window)){resolve(null);return}const request=indexedDB.open(IDB_NAME,IDB_VERSION);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(IDB_STORE))request.result.createObjectStore(IDB_STORE);if(!request.result.objectStoreNames.contains(IDB_FILE_STORE))request.result.createObjectStore(IDB_FILE_STORE,{keyPath:'id'});if(!request.result.objectStoreNames.contains(IDB_META_STORE))request.result.createObjectStore(IDB_META_STORE)};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||Error('IndexedDB unavailable'))})}function idbReadAll(db){return new Promise((resolve,reject)=>{const out={};const tx=db.transaction(IDB_STORE,'readonly'),store=tx.objectStore(IDB_STORE),req=store.openCursor();req.onsuccess=()=>{const cursor=req.result;if(cursor){out[cursor.key]=cursor.value;cursor.continue()}else resolve(out)};req.onerror=()=>reject(req.error)})}function idbPut(key,value){if(!idbDatabase)return;try{const tx=idbDatabase.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).put(String(value),key)}catch(e){}}const appStorage={getItem(key){return storageCache.has(key)?storageCache.get(key):legacyGet(key)},setItem(key,value){const text=String(value);storageCache.set(key,text);idbPut(key,text)},removeItem(key){storageCache.delete(key);if(idbDatabase){try{idbDatabase.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).delete(key)}catch(e){}}},key(index){return [...storageCache.keys()][index]??null},get length(){return storageCache.size}};function idbReplaceDatabaseFiles(records,meta){if(!idbDatabase)return;try{const tx=idbDatabase.transaction([IDB_FILE_STORE,IDB_META_STORE],'readwrite'),files=tx.objectStore(IDB_FILE_STORE),metadata=tx.objectStore(IDB_META_STORE);files.clear();(records||[]).forEach(record=>files.put(record));metadata.put(meta||{},'selected-folder')}catch(e){console.warn('IndexedDB database files save failed',e)}}function idbReadDatabaseFiles(){return new Promise(resolve=>{if(!idbDatabase){resolve({records:[],meta:null});return}try{const tx=idbDatabase.transaction([IDB_FILE_STORE,IDB_META_STORE],'readonly'),files=tx.objectStore(IDB_FILE_STORE),metadata=tx.objectStore(IDB_META_STORE),records=[],cursorRequest=files.openCursor();cursorRequest.onsuccess=e=>{const cursor=e.target.result;if(cursor){records.push(cursor.value);cursor.continue()}else{const req=metadata.get('selected-folder');req.onsuccess=()=>resolve({records,meta:req.result||null});req.onerror=()=>resolve({records,meta:null})}};cursorRequest.onerror=()=>resolve({records,meta:null})}catch(e){resolve({records:[],meta:null})}})}
-async function migrateLegacyStorage(){
-  const oldPrefix=String.fromCharCode(116,97,119,111,111,115)+':pwa:';
-  const newPrefix='bill:pwa:';
-  const remap=(key)=>String(key).startsWith(oldPrefix)?newPrefix+String(key).slice(oldPrefix.length):String(key);
-  try{for(const key of Object.keys(localStorage)){if(String(key).startsWith(oldPrefix)){const value=localStorage.getItem(key);const nk=remap(key);if(value!==null&&!localStorage.getItem(nk))localStorage.setItem(nk,value);}}}catch(e){}
-  try{
-    const legacy=await new Promise((resolve,reject)=>{const r=indexedDB.open(String.fromCharCode(116,97,119,111,111,115,45,98,105,108,108,45,115,116,111,114,97,103,101));r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onupgradeneeded=()=>{try{r.transaction.abort()}catch(e){}}});
-    const names=[...legacy.objectStoreNames]; if(names.includes('kv')){const data=await new Promise(resolve=>{const out={};const q=legacy.transaction('kv','readonly').objectStore('kv').openCursor();q.onsuccess=()=>{const c=q.result;if(c){out[c.key]=c.value;c.continue()}else resolve(out)};q.onerror=()=>resolve(out)});for(const [k,v] of Object.entries(data)){const nk=remap(k);if(!storageCache.has(nk))storageCache.set(nk,String(v));}} legacy.close();
-  }catch(e){}
+const IDB_NAME = "bill-storage";
+const IDB_VERSION = 2;
+const IDB_STORE = "kv";
+const IDB_FILE_STORE = "database-files";
+const IDB_META_STORE = "database-meta";
+let idbDatabase = null;
+const storageCache = new Map();
+let idbReady = false;
+function legacyGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+}
+function legacyKeys() {
+  try {
+    return Object.keys(window.localStorage);
+  } catch (e) {
+    return [];
+  }
+}
+function openIndexedDb() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      resolve(null);
+      return;
+    }
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(IDB_STORE))
+        request.result.createObjectStore(IDB_STORE);
+      if (!request.result.objectStoreNames.contains(IDB_FILE_STORE))
+        request.result.createObjectStore(IDB_FILE_STORE, { keyPath: "id" });
+      if (!request.result.objectStoreNames.contains(IDB_META_STORE))
+        request.result.createObjectStore(IDB_META_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () =>
+      reject(request.error || Error("IndexedDB unavailable"));
+  });
+}
+function idbReadAll(db) {
+  return new Promise((resolve, reject) => {
+    const out = {};
+    const tx = db.transaction(IDB_STORE, "readonly"),
+      store = tx.objectStore(IDB_STORE),
+      req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (cursor) {
+        out[cursor.key] = cursor.value;
+        cursor.continue();
+      } else resolve(out);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbPut(key, value) {
+  if (!idbDatabase) return;
+  try {
+    const tx = idbDatabase.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(String(value), key);
+  } catch (e) {}
+}
+const appStorage = {
+  getItem(key) {
+    return storageCache.has(key) ? storageCache.get(key) : legacyGet(key);
+  },
+  setItem(key, value) {
+    const text = String(value);
+    storageCache.set(key, text);
+    idbPut(key, text);
+  },
+  removeItem(key) {
+    storageCache.delete(key);
+    if (idbDatabase) {
+      try {
+        idbDatabase
+          .transaction(IDB_STORE, "readwrite")
+          .objectStore(IDB_STORE)
+          .delete(key);
+      } catch (e) {}
+    }
+  },
+  key(index) {
+    return [...storageCache.keys()][index] ?? null;
+  },
+  get length() {
+    return storageCache.size;
+  },
+};
+function idbReplaceDatabaseFiles(records, meta) {
+  if (!idbDatabase) return;
+  try {
+    const tx = idbDatabase.transaction(
+        [IDB_FILE_STORE, IDB_META_STORE],
+        "readwrite",
+      ),
+      files = tx.objectStore(IDB_FILE_STORE),
+      metadata = tx.objectStore(IDB_META_STORE);
+    files.clear();
+    (records || []).forEach((record) => files.put(record));
+    metadata.put(meta || {}, "selected-folder");
+  } catch (e) {
+    console.warn("IndexedDB database files save failed", e);
+  }
+}
+function idbReadDatabaseFiles() {
+  return new Promise((resolve) => {
+    if (!idbDatabase) {
+      resolve({ records: [], meta: null });
+      return;
+    }
+    try {
+      const tx = idbDatabase.transaction(
+          [IDB_FILE_STORE, IDB_META_STORE],
+          "readonly",
+        ),
+        files = tx.objectStore(IDB_FILE_STORE),
+        metadata = tx.objectStore(IDB_META_STORE),
+        records = [],
+        cursorRequest = files.openCursor();
+      cursorRequest.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          records.push(cursor.value);
+          cursor.continue();
+        } else {
+          const req = metadata.get("selected-folder");
+          req.onsuccess = () => resolve({ records, meta: req.result || null });
+          req.onerror = () => resolve({ records, meta: null });
+        }
+      };
+      cursorRequest.onerror = () => resolve({ records, meta: null });
+    } catch (e) {
+      resolve({ records: [], meta: null });
+    }
+  });
+}
+async function migrateLegacyStorage() {
+  const oldPrefix = String.fromCharCode(116, 97, 119, 111, 111, 115) + ":pwa:";
+  const newPrefix = "bill:pwa:";
+  const remap = (key) =>
+    String(key).startsWith(oldPrefix)
+      ? newPrefix + String(key).slice(oldPrefix.length)
+      : String(key);
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (String(key).startsWith(oldPrefix)) {
+        const value = localStorage.getItem(key);
+        const nk = remap(key);
+        if (value !== null && !localStorage.getItem(nk))
+          localStorage.setItem(nk, value);
+      }
+    }
+  } catch (e) {}
+  try {
+    const legacy = await new Promise((resolve, reject) => {
+      const r = indexedDB.open(
+        String.fromCharCode(
+          116,
+          97,
+          119,
+          111,
+          111,
+          115,
+          45,
+          98,
+          105,
+          108,
+          108,
+          45,
+          115,
+          116,
+          111,
+          114,
+          97,
+          103,
+          101,
+        ),
+      );
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.onupgradeneeded = () => {
+        try {
+          r.transaction.abort();
+        } catch (e) {}
+      };
+    });
+    const names = [...legacy.objectStoreNames];
+    if (names.includes("kv")) {
+      const data = await new Promise((resolve) => {
+        const out = {};
+        const q = legacy
+          .transaction("kv", "readonly")
+          .objectStore("kv")
+          .openCursor();
+        q.onsuccess = () => {
+          const c = q.result;
+          if (c) {
+            out[c.key] = c.value;
+            c.continue();
+          } else resolve(out);
+        };
+        q.onerror = () => resolve(out);
+      });
+      for (const [k, v] of Object.entries(data)) {
+        const nk = remap(k);
+        if (!storageCache.has(nk)) storageCache.set(nk, String(v));
+      }
+    }
+    legacy.close();
+  } catch (e) {}
 }
 
-async function initIndexedStorage(){try{await migrateLegacyStorage();idbDatabase=await openIndexedDb();if(idbDatabase){const data=await idbReadAll(idbDatabase);Object.entries(data).forEach(([key,value])=>storageCache.set(key,String(value)));for(const key of legacyKeys()){if(!storageCache.has(key)){const value=legacyGet(key);if(value!==null){storageCache.set(key,value);idbPut(key,value)}}}idbReady=true}}catch(e){for(const key of legacyKeys()){const value=legacyGet(key);if(value!==null)storageCache.set(key,value)}}} 
-const $=s=>{try{return document.querySelector(s)}catch(e){return null}};window.addEventListener('error',e=>{console.warn('واجهة: عنصر أو مفتاح غير متاح',e.error||e.message);e.preventDefault()});window.addEventListener('unhandledrejection',e=>{console.warn('واجهة: خطأ غير متوقع',e.reason);e.preventDefault()});
-const els={search:$('#productSearch'),suggestions:$('#suggestions'),qty:$('#quantity'),price:$('#selectedPrice'),selected:$('#selectedProduct'),items:$('#invoiceItems'),itemsCount:$('#itemsCount'),totalQty:$('#totalQty'),grand:$('#grandTotal'),toast:$('#toast')};
-let products=[],customers=[],customerHistory=[],cart=[],selected=null,priceMode='wholesale',activeSuggestion=-1,deferredPrompt=null,searchTimer=0,searchWorker=null,scannerTimer=0,scannerControls=null,scannerStream=null,scannerTorchOn=false,scannerMode='',scannerSession=0,advanceUnlocked=false,advanceLocked=appStorage.getItem('bill:pwa:advance-locked')==='1',pendingRegistration=null;
-const ADVANCE_PASSWORD='369321951Saif',LIMIT_PASSWORD='741789159Saif',ACTIVATION_PASSWORD='Saif_Server_Activete';const savedPriceLimit=appStorage.getItem('bill:pwa:price-limit'),parsedPriceLimit=Number(savedPriceLimit);let priceLimitRatio=(savedPriceLimit===null||!Number.isFinite(parsedPriceLimit)||parsedPriceLimit<0||parsedPriceLimit>100?30:parsedPriceLimit)/100,modalResolve=null,confirmResolve=null;
-const KEY='bill:pwa:invoices',PRODKEY='bill:pwa:products:v2',HISTORY_KEY='bill:pwa:history-collapsed',USERS_KEY='bill:pwa:users',SESSION_KEY='bill:pwa:session',SESSION_DAY_KEY='bill:pwa:session-day',ADMIN_LOG_KEY='bill:pwa:admin-log';
-const DEVELOPER_USERNAME='Saif_Eldin_Ryhan',DEVELOPER_PASSWORD='258*357*159*654',ZAXCEL_PASSWORD='Zaxcel';
-const PASSWORD_FAILURES_KEY='bill:pwa:password-failures',DEVICE_BLOCKED_KEY='bill:pwa:device-blocked';let dataFolderReady=false,usersFileReady=false,usersFileUsers=[],mdbSelected=false;
-function isPrimaryDeveloperAttempt(){return currentUser?.username===DEVELOPER_USERNAME||$('#loginUsername')?.value.trim()===DEVELOPER_USERNAME}
-function readPasswordFailures(){try{return JSON.parse(appStorage.getItem(PASSWORD_FAILURES_KEY)||'{}')}catch{return {}}}
-function recordPasswordFailure(kind){const failures=readPasswordFailures();failures[kind]=(Number(failures[kind])||0)+1;appStorage.setItem(PASSWORD_FAILURES_KEY,JSON.stringify(failures));return failures[kind]}
-function clearPasswordFailure(kind){const failures=readPasswordFailures();delete failures[kind];appStorage.setItem(PASSWORD_FAILURES_KEY,JSON.stringify(failures))}
-async function blockCurrentDevice(){if(isPrimaryDeveloperAttempt())return;appStorage.setItem(DEVICE_BLOCKED_KEY,'1');try{await centralRequest('/devices/block-self',{method:'POST',body:JSON.stringify(getDeviceProfile())})}catch(e){}clearSession();toast('تم حظر هذا الجهاز وتسجيل الخروج. لا يمكن الدخول منه إلا بعد تفعيل المطوّر الأساسي.')}
-async function securePassword(kind,title,message,expected){const max=kind==='activation'?3:2;for(;;){const key=await openSecureModal(title,message);if(key===null)return null;if(key===expected){clearPasswordFailure(kind);toast('تم التحقق من كلمة المرور بنجاح');return key}if(isPrimaryDeveloperAttempt()){$('#modalError').textContent='كلمة المرور غير صحيحة؛ أعد المحاولة';toast('كلمة المرور غير صحيحة؛ أعد المحاولة');continue}const count=recordPasswordFailure(kind);const remaining=max-count;if(remaining>0){$('#modalError').textContent=`كلمة المرور غير صحيحة. المحاولات المتبقية: ${remaining}`;toast(`كلمة المرور غير صحيحة. المتبقي: ${remaining}`);continue}if(kind==='activation'){await blockCurrentDevice();return null}toast('تم استنفاد المحاولات؛ سيتم طلب كلمة مرور التفعيل');return '__ESCALATE__'}}
-
-const DEFAULT_USERS=[{username:DEVELOPER_USERNAME,password:DEVELOPER_PASSWORD,role:'developer',active:true},{username:'مستخدم تجريبي',password:'4321',role:'user',active:true}];
-let currentUser=null;
-const CENTRAL_DEFAULT='https://3000-icvfeaxb8zgobmqlkioua-a3ed9d5f.us3.manus.computer/api/local',DEVICE_ID_KEY='bill:pwa:device-id',CENTRAL_TOKEN_KEY='bill:pwa:central-token';
-function getDeviceId(){let id=appStorage.getItem(DEVICE_ID_KEY);if(!id){id=crypto.randomUUID?crypto.randomUUID():`device-${Date.now()}-${Math.random().toString(36).slice(2)}`;appStorage.setItem(DEVICE_ID_KEY,id)}return id}
-function getDeviceProfile(){const ua=navigator.userAgent||'';const platform=/Android/i.test(ua)?'android':/iPhone|iPad|iPod/i.test(ua)?'ios':/Windows/i.test(ua)?'windows':/Macintosh/i.test(ua)?'macos':/Linux/i.test(ua)?'linux':'web';return {deviceId:getDeviceId(),deviceName:`${platform==='android'?'هاتف Android':platform==='ios'?'هاتف iPhone':platform==='windows'?'كمبيوتر Windows':platform==='macos'?'كمبيوتر Mac':platform==='linux'?'كمبيوتر Linux':'متصفح ويب'} · ${navigator.platform||'web'}`,platform}}
-function formatInvoiceTime(date=new Date()){const value=date.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});return value.replace(/\sAM$/,' صباحًا').replace(/\sPM$/,' مساءً')}
-async function centralRequest(path,options={}){const cfg=window.BILL_CENTRAL_CONFIG||{},base=String(cfg.baseUrl||CENTRAL_DEFAULT).replace(/\/$/,'');const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Number(cfg.timeoutMs)||8000);try{const token=appStorage.getItem(CENTRAL_TOKEN_KEY);if(typeof cfg.request==='function')return await cfg.request(path,{...options,headers:{...(cfg.headers||{}),...(options.headers||{})}},{token});const response=await fetch(`${base}${path}`,{...options,cache:'no-store',signal:controller.signal,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}) ,...(options.headers||{})}});const data=await response.json().catch(()=>({}));if(!response.ok){const error=Error(data.error||'تعذر الاتصال بالخادم المركزي');error.code=data.code||data.errorCode||(response.status===403?'FORBIDDEN':'CENTRAL_ERROR');error.status=response.status;error.serverData=data;throw error}return data}catch(error){if(error?.name==='AbortError'||error instanceof TypeError){const networkError=Error('تعذر الاتصال بالخادم المركزي. تحقق من الاتصال.');networkError.networkError=true;networkError.code='NETWORK_ERROR';throw networkError}throw error}finally{clearTimeout(timer)}}
-async function openScanner(mode){await stopScanner();const session=++scannerSession;scannerMode=mode;const modal=$('#scannerModal'),video=$('#scannerVideo'),message=$('#scannerMessage'),torchButton=$('#scannerTorch'),zoomControl=$('#scannerZoom');if(!modal||!video||!message)return;modal.classList.remove('hidden');modal.setAttribute('aria-hidden','false');$('#scannerTitle').textContent=mode==='product'?'مسح باركود المنتج':'الدخول بال QR';message.textContent='جاري تشغيل الكاميرا...';if(torchButton)torchButton.classList.add('hidden');if(zoomControl){zoomControl.classList.add('hidden');zoomControl.value='1'}try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('camera unavailable');const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:60}},audio:false});if(session!==scannerSession){stream.getTracks().forEach(t=>t.stop());return}scannerStream=stream;video.srcObject=stream;await video.play();const track=stream.getVideoTracks?.()[0],caps=track?.getCapabilities?.()||{};if(torchButton&&caps.torch){torchButton.classList.remove('hidden');torchButton.textContent='تشغيل الكشاف';torchButton.onclick=()=>toggleScannerTorch(track,torchButton)}if(zoomControl&&caps.zoom){zoomControl.classList.remove('hidden');zoomControl.min=String(caps.zoom.min??1);zoomControl.max=String(caps.zoom.max??4);zoomControl.step=String(caps.zoom.step??0.1);zoomControl.value=String(caps.zoom.min??1);zoomControl.oninput=()=>setScannerZoom(track,zoomControl)}let detector=null;if('BarcodeDetector'in window){try{const supported=await BarcodeDetector.getSupportedFormats(),formats=['aztec','codabar','code_128','code_39','code_93','data_matrix','ean_13','ean_8','itf','pdf417','qr_code','upc_a','upc_e'].filter(x=>supported.includes(x));if(formats.length)detector=new BarcodeDetector({formats})}catch(e){}}message.textContent=mode==='product'?'وجّه الكاميرا إلى الباركود':'وجّه الكاميرا إلى رمز QR';let lastRaw='',lastAt=0,busy=false;const deliver=async raw=>{if(!raw||busy||session!==scannerSession||raw===lastRaw&&Date.now()-lastAt<1200)return;lastRaw=raw;lastAt=Date.now();busy=true;try{await processScannedValue(raw)}finally{busy=false}};const scanNative=async()=>{if(session!==scannerSession||!scannerStream)return;try{const found=detector?await detector.detect(video):null;const raw=found?.[0]?.rawValue||'';if(raw)await deliver(raw)}catch(e){}if(session===scannerSession&&scannerStream)scannerTimer=requestAnimationFrame(scanNative)};if(detector){scannerTimer=requestAnimationFrame(scanNative);return}if(window.ZXingBrowser?.BrowserMultiFormatReader){try{const reader=new ZXingBrowser.BrowserMultiFormatReader();scannerControls=await reader.decodeFromVideoElement(video,async result=>{if(session!==scannerSession)return;await deliver(result?.getText?.()||result?.text||'')});return}catch(e){scannerControls=null}}const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});const scanFallback=async()=>{if(session!==scannerSession||!scannerStream)return;try{if(window.jsQR&&video.readyState>=2){const width=Math.min(video.videoWidth||640,960),height=Math.min(video.videoHeight||480,720);if(width&&height){canvas.width=width;canvas.height=height;ctx.drawImage(video,0,0,width,height);const imageData=ctx.getImageData(0,0,width,height),raw=window.jsQR(imageData.data,width,height,{inversionAttempts:'attemptBoth'})?.data||'';if(raw)await deliver(raw)}}}catch(e){}if(session===scannerSession&&scannerStream)scannerTimer=requestAnimationFrame(scanFallback)};scannerTimer=requestAnimationFrame(scanFallback)}catch(error){if(session===scannerSession)message.textContent='تعذر تشغيل الكاميرا. استخدم زر اختيار صورة QR أو باركود.'}}
-async function centralLogin(username,password){const data=await centralRequest('/login',{method:'POST',body:JSON.stringify({username,password,...getDeviceProfile()})});appStorage.setItem(CENTRAL_TOKEN_KEY,data.token);appStorage.setItem('bill:pwa:central-device',JSON.stringify(data.device||{}));return data.user}
-async function syncCentralDevice(){if(!appStorage.getItem(CENTRAL_TOKEN_KEY))return;try{const data=await centralRequest('/heartbeat',{method:'POST',body:JSON.stringify(getDeviceProfile())});if(data.device?.status==='blocked'){clearSession();toast('هذا الجهاز محظور من المطوّر')}}catch(e){}}
-function saveUsers(users){const safe=(Array.isArray(users)?users:[]).filter(u=>u&&u.username!==DEVELOPER_USERNAME&&u.username!=='شيماء عبدالجواد'&&u.username!=='سيف الدين ريحان').map(u=>({...u,active:u.active!==false,role:u.role==='developer'?'developer':'user'}));appStorage.setItem(USERS_KEY,JSON.stringify(safe));return safe}function getUsers(){let users=[];try{const raw=appStorage.getItem(USERS_KEY);const parsed=raw?JSON.parse(raw):[];if(Array.isArray(parsed))users=parsed}catch(e){}users=users.filter(u=>u&&u.username!==DEVELOPER_USERNAME&&u.username!=='شيماء عبدالجواد'&&u.username!=='سيف الدين ريحان').map(u=>({...u,active:u.active!==false,role:u.role==='developer'?'developer':'user'}));if(!users.some(u=>u.username==='مستخدم تجريبي'))users.push({...DEFAULT_USERS[1]});saveUsers(users);return [{...DEFAULT_USERS[0]},...users]}
-function save(){if(!cart.length){toast('أضف منتجًا واحدًا على الأقل');return}const data=invoiceData(),all=JSON.parse(appStorage.getItem(KEY)||'[]');all.unshift(data);appStorage.setItem(KEY,JSON.stringify(all.slice(0,500)));const code=String(data.customerCode||'').trim();if(code){const items=data.cart.map(x=>{const unit=Number(x.customPrice??(data.unitPriceFor(x.product)));return {code:String(x.product.code),name:String(x.customName??x.product.name),lastPrice:unit,lastQty:Number(x.qty)||0,mode:data.priceMode}});const entry={customerCode:code,invoiceCount:1,items};customerHistory=[...customerHistory.filter(x=>String(x.customerCode)!==code),entry];appStorage.setItem('bill:pwa:customer-history:v1',JSON.stringify(customerHistory));}renderSaved();if(code)renderCustomer(code);toast('تم حفظ الفاتورة وتحديث سجل مشتريات العميل')} function recordAdminLog(action,target,details=''){const logs=JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]');logs.unshift({id:Date.now(),time:new Date().toISOString(),actor:currentUser?.username||'system',action,target,details});appStorage.setItem(ADMIN_LOG_KEY,JSON.stringify(logs.slice(0,500)))} function renderAdminLog(){const box=$('#adminLog');if(!box)return;const logs=JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]');box.innerHTML=logs.length?logs.slice(0,30).map(x=>`<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target)}</span><small>${escapeHtml(x.actor)} · ${escapeHtml(new Date(x.time).toLocaleString('ar-EG'))}</small></div>`).join(''):'<div class="empty-row">لا توجد عمليات مسجلة</div>'}
-function availableUsers(){let stored=[];try{const raw=appStorage.getItem(USERS_KEY);const parsed=raw?JSON.parse(raw):[];if(Array.isArray(parsed))stored=parsed}catch(e){}const merged=[];[...DEFAULT_USERS,...stored,...usersFileUsers].forEach(user=>{if(!user||!String(user.username||'').trim())return;const i=merged.findIndex(x=>x.username===user.username);if(i>=0)merged[i]=user;else merged.push(user)});return merged}
-function todayKey(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`} function setSession(user){currentUser=user;appStorage.setItem(SESSION_KEY,user.username);appStorage.setItem(SESSION_DAY_KEY,todayKey());$('#authGate')?.classList.add('hidden');$('#appMain')?.classList.add('app-unlocked');$('#logoutUser')?.classList.remove('hidden');const manager=$('#manageUsers');if(manager)manager.classList.toggle('hidden',user.role!=='developer');renderUserList()}
-function clearSession(){currentUser=null;appStorage.removeItem(CENTRAL_TOKEN_KEY);appStorage.removeItem('bill:pwa:central-device');appStorage.removeItem(SESSION_KEY);appStorage.removeItem(SESSION_DAY_KEY);$('#authGate')?.classList.remove('hidden');$('#appMain')?.classList.remove('app-unlocked')} function openAccountMenu(){if(!currentUser)return;$('#accountUserLabel').textContent=`المستخدم الحالي: ${currentUser.username} · ${currentUser.role==='developer'?'مطوّر':'حساب عادي'}`;$('#accountManageUsers').classList.toggle('hidden',currentUser.role!=='developer');$('#accountManageProducts')?.classList.toggle('hidden',currentUser.role!=='developer');$('#accountManageCustomers')?.classList.toggle('hidden',currentUser.role!=='developer');$('#accountLoginAttempts').classList.toggle('hidden',currentUser.role!=='developer');$('#accountManageDevices').classList.toggle('hidden',currentUser.username!==DEVELOPER_USERNAME);$('#accountMenuModal').classList.remove('hidden')} function closeAccountMenu(){$('#accountMenuModal')?.classList.add('hidden')} async function renderDevices(){const box=$('#devicesList');if(!box)return;box.innerHTML='<div class="empty-row">جاري تحميل الأجهزة...</div>';try{const data=await centralRequest('/devices');const devices=data.devices||[];box.innerHTML=devices.length?devices.map(x=>{const d=x.device||x,a=x.account||{};const status=d.status==='blocked'?'محظور':d.status==='revoked'?'ملغى':'نشط';return `<div class="user-row"><div><strong>${escapeHtml(d.deviceName||'جهاز')}</strong><small>${escapeHtml(a.username||'حساب غير معروف')} · ${escapeHtml(d.platform||'unknown')} · ${status} · آخر اتصال ${escapeHtml(new Date(d.lastSeenAt).toLocaleString('ar-EG'))}</small></div><div class="user-row-actions">${d.status==='blocked'?`<button type="button" class="btn secondary small" data-device-action="active" data-device-id="${d.id}">إلغاء الحظر</button>`:`<button type="button" class="btn danger small" data-device-action="blocked" data-device-id="${d.id}">حظر</button>`}<button type="button" class="btn ghost small" data-device-action="revoked" data-device-id="${d.id}">إلغاء التسجيل</button></div></div>`}).join(''):'<div class="empty-row">لا توجد أجهزة مسجلة</div>';box.querySelectorAll('[data-device-action]').forEach(b=>b.addEventListener('click',()=>changeDeviceStatus(Number(b.dataset.deviceId),b.dataset.deviceAction)))}catch(e){box.innerHTML=`<div class="empty-row">${escapeHtml(e.message||'تعذر تحميل الأجهزة')}</div>`}}
-async function changeDeviceStatus(id,status){const labels={active:'إلغاء الحظر',blocked:'حظر',revoked:'إلغاء تسجيل'};const ok=await openConfirmModal(`هل تريد تنفيذ: ${labels[status]||status} لهذا الجهاز؟`);if(!ok)return;try{await centralRequest('/devices/action',{method:'POST',body:JSON.stringify({id,status})});recordAdminLog(labels[status]||status,'device:'+id);await renderDevices();toast('تم تحديث حالة الجهاز')}catch(e){toast(e.message||'تعذر تحديث الجهاز')}} function openDevicesManager(){if(!currentUser||currentUser.username!==DEVELOPER_USERNAME){toast('هذه الخاصية للمطوّر الأساسي فقط');return}closeAccountMenu();$('#devicesModal').classList.remove('hidden');renderDevices()} function closeDevicesManager(){$('#devicesModal')?.classList.add('hidden')}
-function syncUnlockButton(){const button=$('#deviceUnlockButton');if(button)button.classList.toggle('hidden',appStorage.getItem(DEVICE_BLOCKED_KEY)!=='1')} async function unlockDeviceWithZaxcel(){const key=await openSecureModal('فتح البرنامج','أدخل كلمة مرور إلغاء الحظر لفتح البرنامج والسماح بتسجيل الدخول:');if(key!==ZAXCEL_PASSWORD){toast('كلمة مرور Zaxcel غير صحيحة');return false}appStorage.removeItem(DEVICE_BLOCKED_KEY);clearPasswordFailure('activation');clearPasswordFailure('secondary');clearPasswordFailure('primary');syncUnlockButton();try{await centralRequest('/devices/unlock',{method:'POST',body:JSON.stringify({deviceId:getDeviceId(),password:key})});toast('تم فتح البرنامج بنجاح. يمكنك تسجيل الدخول الآن.')}catch(error){toast('تم فتح البرنامج محليًا. يمكنك تسجيل الدخول الآن.')}return true}
-async function renderLoginAttempts(){const box=$('#loginAttemptsList');if(!box)return;box.innerHTML='<div class="empty-row">جاري تحميل سجل الدخول...</div>';try{const data=await centralRequest('/login-attempts?limit=100');const attempts=data.attempts||[];box.innerHTML=attempts.length?attempts.map(a=>`<div class="user-row"><div><strong>${escapeHtml(a.username||'—')}</strong><small>${escapeHtml(a.result==='success'?'نجاح':a.result==='blocked'?'محظور':'فشل')} · ${escapeHtml(a.reason||'—')} · ${escapeHtml(a.platform||'unknown')}</small></div><small>${escapeHtml(new Date(a.createdAt).toLocaleString('ar-EG'))}</small></div>`).join(''):'<div class="empty-row">لا توجد محاولات مسجلة</div>'}catch(error){box.innerHTML=`<div class="empty-row">${escapeHtml(error?.message||'تعذر تحميل سجل الدخول')}</div>`}}
-function openLoginAttempts(){if(!currentUser||currentUser.role!=='developer'){toast('هذه الخاصية للمطورين فقط');return}closeAccountMenu();$('#loginAttemptsModal').classList.remove('hidden');renderLoginAttempts()} function closeLoginAttempts(){$('#loginAttemptsModal')?.classList.add('hidden')}
-function logoutUser(){closeAccountMenu();closeUserManager();clearSession();$('#loginUsername')?.focus();toast('تم تسجيل الخروج')}
-function restoreSession(){const name=appStorage.getItem(SESSION_KEY),day=appStorage.getItem(SESSION_DAY_KEY),user=getUsers().find(x=>x.username===name);if(user&&user.active!==false&&day===todayKey())setSession(user);else clearSession()}
-async function login(username,password){const primary=username===DEVELOPER_USERNAME&&password===DEVELOPER_PASSWORD;const locallyBlocked=appStorage.getItem(DEVICE_BLOCKED_KEY)==='1';if(locallyBlocked&&!primary)throw Error('لا يمكن تسجيل الدخول من هذا الجهاز لأنه محظور. يجب فتحه بواسطة المطوّر الأساسي أو من خلال خيار فتح الجهاز.');if(primary){appStorage.removeItem(DEVICE_BLOCKED_KEY);appStorage.removeItem(CENTRAL_TOKEN_KEY);appStorage.removeItem('bill:pwa:central-device');setSession({username:DEVELOPER_USERNAME,password:DEVELOPER_PASSWORD,role:'developer',active:true});toast('تم تسجيل دخول المطوّر الأساسي بنجاح');return true}const localUser=availableUsers().find(x=>x.username===username);if(localUser){if(localUser.active===false||localUser.password!==password)throw Error('اسم المستخدم أو كلمة المرور غير صحيحة.');setSession(localUser);toast('تم الدخول بالحساب المحلي');return true}try{const user=await centralLogin(username,password);if(!user||!user.username)throw Error('استجابة الدخول من الخادم غير صالحة.');appStorage.removeItem(DEVICE_BLOCKED_KEY);setSession(user);return true}catch(centralError){if(locallyBlocked||centralError?.code==='DEVICE_BLOCKED'||centralError?.status===403||/محظور|blocked/i.test(String(centralError?.message||'')))throw Error('لا يمكن تسجيل الدخول من هذا الجهاز لأنه محظور. يجب فتحه بواسطة المطوّر الأساسي أو من خلال خيار فتح الجهاز.');if(!centralError?.networkError)throw centralError;throw Error('اسم المستخدم أو كلمة المرور غير صحيحة.')}}
-async function loginFromForm(event){event?.preventDefault?.();const form=document.querySelector('#loginForm'),username=document.querySelector('#loginUsername')?.value.trim()||'',password=document.querySelector('#loginPassword')?.value||'',errorBox=document.querySelector('#loginError'),button=document.querySelector('#loginSubmit');if(button)button.disabled=true;if(errorBox){errorBox.textContent='';errorBox.classList.remove('show')}try{if(!dataFolderReady)throw Error('اختر مجلد قواعد البيانات أولًا قبل تسجيل الدخول.');if(!usersFileReady)throw Error('يجب أن يحتوي مجلد قاعدة البيانات على ملف users.json صالح قبل تسجيل الدخول.');if(!username||!password)throw Error('أدخل اسم المستخدم وكلمة المرور.');const ok=await login(username,password);if(!ok){if(errorBox)errorBox.textContent='اسم المستخدم أو كلمة المرور غير صحيحة';return false}form?.reset();if(errorBox)errorBox.textContent='';toast(`تم تسجيل الدخول بنجاح: ${currentUser?.username||username}`);return true}catch(error){if(errorBox){errorBox.textContent=error?.message||'تعذر تسجيل الدخول';errorBox.classList.add('show')}if(typeof syncUnlockButton==='function')syncUnlockButton();return false}finally{if(button)button.disabled=false}};window.loginFromForm=loginFromForm;
-function renderUserList(){const box=$('#userList');if(!box)return;const canManage=currentUser?.username===DEVELOPER_USERNAME;box.innerHTML=getUsers().map(u=>`<div class="user-row"><div><strong>${escapeHtml(u.username)}</strong><small>${u.role==='developer'?'حساب مطوّر':'حساب عادي'} · ${u.active===false?'معطل':'فعال'}</small></div>${canManage&&u.username!==DEVELOPER_USERNAME?`<div class="user-row-actions"><button type="button" class="btn ghost small" data-edit-user="${escapeHtml(u.username)}">تعديل</button><button type="button" class="btn secondary small" data-toggle-user="${escapeHtml(u.username)}">${u.active===false?'تفعيل':'تعطيل'}</button><button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">حذف</button></div>`:''}</div>`).join('');box.querySelectorAll('[data-delete-user]').forEach(b=>b.addEventListener('click',()=>deleteUser(b.dataset.deleteUser)));box.querySelectorAll('[data-edit-user]').forEach(b=>b.addEventListener('click',()=>openEditUser(b.dataset.editUser)));box.querySelectorAll('[data-toggle-user]').forEach(b=>b.addEventListener('click',()=>toggleUser(b.dataset.toggleUser)));renderAdminLog()}
-async function deleteUser(username){if(!currentUser||currentUser.username!==DEVELOPER_USERNAME){toast('هذه الخاصية للمطوّر الأساسي فقط');return}if(username===DEVELOPER_USERNAME){toast('لا يمكن حذف حساب المطوّر الأساسي');return}const confirmed=await openConfirmModal(`هل تريد حذف المستخدم ${username} نهائيًا؟`);if(!confirmed)return;saveUsers(getUsers().filter(u=>u.username!==username));recordAdminLog('حذف مستخدم',username);renderUserList();toast('تم حذف المستخدم')} async function toggleUser(username){if(!currentUser||currentUser.username!==DEVELOPER_USERNAME||username===DEVELOPER_USERNAME){toast('تغيير حالة هذا الحساب غير مسموح');return}const users=getUsers(),user=users.find(u=>u.username===username);if(!user)return;const next=user.active===false;const confirmed=await openConfirmModal(`${next?'تفعيل':'تعطيل'} الحساب ${username}؟`);if(!confirmed)return;user.active=next;saveUsers(users);recordAdminLog(next?'تفعيل مستخدم':'تعطيل مستخدم',username);renderUserList();toast(next?'تم تفعيل الحساب':'تم تعطيل الحساب')} function openEditUser(username){if(!currentUser||currentUser.username!==DEVELOPER_USERNAME){toast('هذه الخاصية للمطوّر الأساسي فقط');return}const user=getUsers().find(u=>u.username===username);if(!user||username===DEVELOPER_USERNAME)return;$('#editingUsername').value=user.username;$('#newUsername').value=user.username;$('#newPassword').value=user.password;$('#newUserRole').value=user.role;$('#userSubmit').textContent='حفظ التعديل';$('#userManagerError').textContent=''}
-async function openUserManager(){if(!currentUser||currentUser.role!=='developer'){toast('هذه الخاصية للمطوّر فقط');return}const key=await securePassword('secondary','إدارة المستخدمين','أدخل كلمة مرور إدارة الحساب:',LIMIT_PASSWORD);if(key!==LIMIT_PASSWORD)return;if(advanceLocked&&!(await requestActivation()))return;renderUserList();$('#userManagerModal').classList.remove('hidden');$('#newUsername').focus()}
-function closeUserManager(){$('#userManagerModal')?.classList.add('hidden');$('#userForm')?.reset();$('#editingUsername').value='';$('#userSubmit').textContent='إضافة المستخدم';$('#userManagerError').textContent=''}
-async function addUser(event){event.preventDefault();if(!currentUser||currentUser.role!=='developer'){toast('هذه الخاصية للمطوّر فقط');return}const username=$('#newUsername').value.trim(),password=$('#newPassword').value,role=$('#newUserRole').value,error=$('#userManagerError'),editing=$('#editingUsername').value.trim();if(!username||!password){error.textContent='أدخل اسم المستخدم وكلمة المرور';return}const users=getUsers();if(users.some(u=>u.username===username&&u.username!==editing)){error.textContent='اسم المستخدم موجود بالفعل';return}if(editing){const user=users.find(u=>u.username===editing);if(!user){error.textContent='المستخدم غير موجود';return}user.username=username;user.password=password;user.role=role==='developer'?'developer':'user';recordAdminLog('تعديل مستخدم',username,`كان الاسم السابق: ${editing}`);toast('تم تعديل بيانات المستخدم')}else{users.push({username,password,role:role==='developer'?'developer':'user',active:true});recordAdminLog('إضافة مستخدم',username,role==='developer'?'حساب مطوّر':'حساب عادي');toast('تمت إضافة المستخدم')}saveUsers(users);if(currentUser?.username===DEVELOPER_USERNAME){try{await centralRequest('/accounts/sync',{method:'POST',body:JSON.stringify({username,password,role})})}catch(e){toast('تم حفظ الحساب محليًا وسيتم رفعه عند توفر الاتصال')}}downloadJson({version:1,users:users.filter(user=>user.username!==DEVELOPER_USERNAME).map(({password,...user})=>user),logs:JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]'),updatedAt:new Date().toISOString()},'users.json');error.textContent='';closeUserManager();renderUserList()}
-async function importUsersFile(file){try{const data=JSON.parse(await file.text()),users=Array.isArray(data)?data:data.users;if(!Array.isArray(users)||!users.length||users.some(u=>!u.username||!u.password||!['user','developer'].includes(u.role)))throw Error();if(!currentUser||currentUser.role!=='developer'){toast('استيراد المستخدمين للمطوّر فقط');return}saveUsers(users.some(u=>u.username===DEVELOPER_USERNAME)?users:[...DEFAULT_USERS,...users]);recordAdminLog('استيراد المستخدمين','users.json');renderUserList();toast('تم استيراد قاعدة المستخدمين')}catch(e){toast('ملف users.json غير صحيح')}}
-const money=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const normalize=s=>String(s||'').trim().toLocaleLowerCase('ar-EG');
-function toast(msg){const el=document.getElementById('toast');if(!el)return;el.textContent=msg;el.classList.add('show');clearTimeout(el._timer);el._timer=setTimeout(()=>el.classList.remove('show'),2400)}
-function setDate(){const d=new Date();$('#invoiceDate').value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
-function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-async function loadProducts(){let local=[];try{const raw=appStorage.getItem(PRODKEY);const data=raw?JSON.parse(raw):[];if(Array.isArray(data))local=data}catch(e){}products=local.filter(p=>p&&p.code!=null).map(p=>({...p,code:String(p.code),searchText:`${normalize(p.name||p.code)} ${p.code}`}));try{if('Worker'in window&&products.length){searchWorker=new Worker('search-worker.js');searchWorker.onmessage=e=>{if(e.data?.type==='results'&&normalize(e.data.query)===normalize(els.search.value))renderFound(e.data.results)};setTimeout(()=>{try{searchWorker?.postMessage({type:'init',payload:products})}catch(e){}},0)}}catch(e){searchWorker=null}if(!products.length)toast('لم يتم تحميل المنتجات؛ اختر مجلد قاعدة البيانات');document.title='Bill'}
-function normalizeCustomerCode(value){return String(value??'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim().replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/\.0+$/,'')}function normalizeCustomerRecord(item){if(!item||typeof item!=='object')return null;const pick=(...keys)=>{const key=Object.keys(item).find(k=>keys.some(name=>String(k).toLowerCase()===String(name).toLowerCase()));return key===undefined?'':item[key]};const code=normalizeCustomerCode(pick('code','customerCode','cus_code','cuscode','customer_code','كود','كود_العميل'));const name=String(pick('name','customerName','cus_name','cusname','customer_name','اسم','اسم_العميل')||'').trim();if(!code||!name)return null;return {code,name,city:String(pick('city','customerCity','cus_city','cuscity','customer_city','مدينة','المدينة')||'').trim(),address:String(pick('address','customerAddress','cus_address','cusaddress','customer_address','عنوان','العنوان')||'').trim(),phone:String(pick('phone','tel','tel_1','tel1','mobile','telephone','هاتف','التليفون')||'').trim()}}function normalizeCustomersData(value){if(!Array.isArray(value))return [];return value.map(normalizeCustomerRecord).filter(Boolean)}async function loadCustomers(){try{const raw=JSON.parse(appStorage.getItem('bill:pwa:customers:v1')||'[]');const local=Array.isArray(raw)?raw:(raw?.customers||raw?.customer||raw?.data||raw?.rows||[]);customers=normalizeCustomersData(local)}catch(e){customers=[]}try{const localHistory=JSON.parse(appStorage.getItem('bill:pwa:customer-history:v1')||'[]');customerHistory=Array.isArray(localHistory)?localHistory:[]}catch(e){customerHistory=[]}}
-function renderCustomer(code){const normalizedCode=normalizeCustomerCode(code),c=customers.find(x=>normalizeCustomerCode(x.code)===normalizedCode),info=$('#customerInfo'),hist=$('#customerHistory');if(!c){$('#customerName').value='';$('#customerCity').value='';$('#customerPhone').value='';info.classList.add('hidden');hist.classList.add('hidden');return}$('#customerName').value=c.name||'';$('#customerCity').value=c.city||'';$('#customerPhone').value=c.phone||'';info.classList.add('hidden');const h=customerHistory.find(x=>normalizeCustomerCode(x.customerCode)===normalizedCode);if(h&&h.items.length){const collapsed=appStorage.getItem(HISTORY_KEY)==='1';hist.classList.remove('hidden');hist.innerHTML=`<div class="history-heading history-heading-row"><span>مشتريات سابقة · ${h.invoiceCount} فاتورة</span><button type="button" class="history-toggle">${collapsed?'إظهار المشتريات السابقة':'إخفاء المشتريات السابقة'}</button></div><div class="history-chips${collapsed?' hidden':''}">${h.items.slice(0,60).map(x=>`<button class="history-chip" data-code="${escapeHtml(x.code)}"><span>${escapeHtml(x.name)}</span><small>${x.mode==='wholesale'?'مستخدم 2':'مستخدم 3'} · ${money(x.lastPrice)} · كمية ${x.lastQty||0}</small></button>`).join('')}</div>`;const toggle=hist.querySelector('.history-toggle'),chips=hist.querySelector('.history-chips');toggle.addEventListener('click',()=>{const next=!chips.classList.contains('hidden');chips.classList.toggle('hidden',next);appStorage.setItem(HISTORY_KEY,next?'1':'0');toggle.textContent=next?'إظهار المشتريات السابقة':'إخفاء المشتريات السابقة'});hist.querySelectorAll('.history-chip').forEach(b=>b.addEventListener('click',()=>{const p=products.find(x=>String(x.code)===String(b.dataset.code));if(p)choose(p)}))}else hist.classList.add('hidden')}
-function renderFound(found){activeSuggestion=-1;if(!normalize(els.search.value)){els.suggestions.classList.remove('open');els.suggestions.innerHTML='';return}els.suggestions.innerHTML=found.length?found.map((p,i)=>`<div class="suggestion ${productAgeClass(p.code)}" data-index="${i}" role="option"><span class="suggestion-name">${escapeHtml(p.name)}</span><span class="suggestion-meta">${escapeHtml(p.code)} · ${money(priceMode==='wholesale'?p.wholesale:p.retail)}</span></div>`).join(''):'<div class="suggestion"><span class="suggestion-name">لا توجد نتائج</span></div>';els.suggestions.classList.add('open');els.suggestions.querySelectorAll('.suggestion[data-index]').forEach(x=>x.addEventListener('mousedown',e=>{e.preventDefault();choose(found[Number(x.dataset.index)])}))}
-function findProducts(q){const query=normalize(q),out=[];if(!query)return out;for(const p of products){if(p.searchText.includes(query)){out.push(p);if(out.length>=40)break}}return out}
-function scheduleSuggestions(){clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const q=els.search.value;if(!normalize(q)){renderFound([]);return}if(searchWorker)searchWorker.postMessage({type:'search',payload:{query:q}});else renderFound(findProducts(q))},20)}
-function productAgeClass(code){const value=String(code||'');if(value.startsWith('24'))return'product-old';if(value.startsWith('25'))return'product-recent';if(value.startsWith('26'))return'product-current';return'product-current'}
-function applyProductColor(product){const cls=product?productAgeClass(product.code):'';[els.search,els.qty,els.selected].forEach(el=>{if(!el)return;el.classList.remove('product-current','product-recent','product-old');if(cls)el.classList.add(cls)})}
-function choose(p){selected=p;els.search.value=p.name;els.suggestions.classList.remove('open');els.selected.classList.remove('empty');applyProductColor(p);updatePrice();els.qty.focus();els.qty.select()}
-function unitPriceFor(product,mode=priceMode){if(!product)return 0;const preferred=Number(mode==='wholesale'?product.wholesale:product.retail);if(Number.isFinite(preferred)&&preferred>0)return preferred;const fallback=Number(mode==='wholesale'?product.retail:product.wholesale);return Number.isFinite(fallback)&&fallback>0?fallback:0}function effectivePriceMode(product,mode=priceMode){if(!product)return mode;const preferred=Number(mode==='wholesale'?product.wholesale:product.retail);return Number.isFinite(preferred)&&preferred>0?mode:(mode==='wholesale'?'retail':'wholesale')}function effectivePriceLabel(product){return effectivePriceMode(product)==='wholesale'?'مستخدم 2':'مستخدم 3'}function selectedUnitPrice(){return selected?unitPriceFor(selected):0}
-function updatePrice(){els.price.textContent=selected?money(selectedUnitPrice()):'—';if(selected){applyProductColor(selected);els.selected.innerHTML=`<strong>${escapeHtml(selected.name)}</strong> <span>· الكود ${escapeHtml(selected.code)} · ${effectivePriceLabel(selected)} ${money(selectedUnitPrice())}</span>`}else applyProductColor(null);document.querySelectorAll('.price-btn').forEach(b=>b.classList.toggle('active',b.dataset.price===priceMode));renderCart()}
-function add(){if(!selected){toast('اكتب جزءًا من الاسم واختر منتجًا');els.search.focus();return}const qty=Number(els.qty.value);if(!qty||qty<=0){toast('أدخل كمية صحيحة');els.qty.focus();return}const existing=cart.find(x=>x.product.code===selected.code);if(existing)existing.qty+=qty;else cart.push({product:selected,qty});renderCart();els.search.value='';els.qty.value='1';selected=null;els.selected.textContent='لم يتم اختيار منتج';els.selected.classList.add('empty');els.price.textContent='—';els.search.focus()}
-function renderCart(){if(!cart.length)els.items.innerHTML='<tr><td colspan="7" class="empty-row">لم تتم إضافة منتجات بعد</td></tr>';else els.items.innerHTML=cart.map((x,i)=>{const original=unitPriceFor(x.product),unit=Number(x.customPrice??original),total=unit*x.qty,cls=productAgeClass(x.product.code);return `<tr class="${cls}"><td>${i+1}</td><td><strong>${escapeHtml(x.customName??x.product.name)}</strong></td><td><span class="product-code">${escapeHtml(x.product.code)}</span></td><td><span>${money(unit)}</span>${x.customPrice!=null?'<small class="custom-price-mark">معدل</small>':''}</td><td><input class="line-qty ${cls}" data-i="${i}" type="number" min=".01" step=".01" value="${x.qty}"></td><td><strong>${money(total)}</strong></td><td><div class="line-actions"><button class="price-edit product-info-btn" data-i="${i}" title="معلومات المنتج للمطور" aria-label="معلومات المنتج للمطور">?</button><button class="price-edit" data-i="${i}" title="تعديل اسم وسعر المنتج" aria-label="تعديل اسم وسعر المنتج">&#9881;</button><button class="delete-line" data-i="${i}">حذف</button></div></td></tr>`}).join('');els.items.querySelectorAll('.line-qty').forEach(i=>i.addEventListener('change',()=>{const q=Number(i.value);if(q>0)cart[Number(i.dataset.i)].qty=q;renderCart()}));els.items.querySelectorAll('.delete-line').forEach(b=>b.addEventListener('click',()=>{cart.splice(Number(b.dataset.i),1);renderCart()}));els.items.querySelectorAll('.price-edit:not(.product-info-btn)').forEach(b=>b.addEventListener('click',()=>editAdvancedPrice(Number(b.dataset.i))));els.items.querySelectorAll('.product-info-btn').forEach(b=>b.addEventListener('click',()=>showCartProductDetails(Number(b.dataset.i))));const tq=cart.reduce((a,x)=>a+x.qty,0),total=cart.reduce((a,x)=>{const original=unitPriceFor(x.product);return a+Number(x.customPrice??original)*x.qty},0);els.itemsCount.textContent=`${cart.length.toLocaleString('en-US')} أصناف`;els.totalQty.textContent=tq.toLocaleString('en-US');els.grand.textContent=money(total)}
-function syncProgramLock(){const lock=$('#programLock');if(lock)lock.classList.toggle('hidden',!advanceLocked)} function updatePriceLimitLabel(){const el=$('#priceLimitLabel');if(el)el.textContent=`نسبة التعديل الحالية: ±${Math.round(priceLimitRatio*100)}%`} function openSecureModal(title,message,options={}){return new Promise(resolve=>{const modal=$('#passwordModal'),input=$('#modalInput');$('#modalTitle').textContent=title;$('#modalMessage').textContent=message;$('#modalError').textContent='';input.type=options.type||'password';input.value=options.value??'';input.min=options.min??'';input.max=options.max??'';input.step=options.step??'';modalResolve=resolve;modal.classList.remove('hidden');setTimeout(()=>input.focus(),30)})} function closeSecureModal(value){const modal=$('#passwordModal');modal.classList.add('hidden');if(modalResolve){const resolve=modalResolve;modalResolve=null;resolve(value)}} function openConfirmModal(message){return new Promise(resolve=>{$('#confirmMessage').textContent=message;confirmResolve=resolve;$('#confirmModal').classList.remove('hidden')})} function closeConfirmModal(value){$('#confirmModal').classList.add('hidden');if(confirmResolve){const resolve=confirmResolve;confirmResolve=null;resolve(value)}} function lockProgram(){advanceLocked=true;appStorage.setItem('bill:pwa:advance-locked','1');syncProgramLock();toast('تم قفل خاصية التعديل المتقدم')} async function requestActivation(){const key=await securePassword('activation','تفعيل البرنامج','تم تجاوز عدد المحاولات. أدخل كلمة مرور التفعيل لفتح البرنامج:',ACTIVATION_PASSWORD);if(key===ACTIVATION_PASSWORD){advanceLocked=false;appStorage.removeItem('bill:pwa:advance-locked');syncProgramLock();toast('تم تفعيل البرنامج بنجاح');return true}return false} async function editAdvancedPrice(index){if(!currentUser)return;if(advanceLocked&&!(await requestActivation()))return;if(!advanceUnlocked){const key=await securePassword('primary','تعديل الاسم والسعر','أدخل كلمة مرور تعديل السعر:',ADVANCE_PASSWORD);if(key===ADVANCE_PASSWORD)advanceUnlocked=true;else if(key==='__ESCALATE__'){if(!(await requestActivation()))return;advanceUnlocked=true}else return}const item=cart[index];if(!item)return;const product=item.product;const nameValue=await openSecureModal('اسم المنتج في هذه الفاتورة','أدخل الاسم الذي سيظهر في هذه الفاتورة فقط:',{type:'text',value:String(item.customName??product.name??'')});if(nameValue===null)return;const newName=String(nameValue).trim();if(!newName){toast('اسم المنتج غير صحيح؛ لم يتم التعديل');return}const original=unitPriceFor(product),current=Number(item.customPrice??original);const entered=await openSecureModal('السعر في هذه الفاتورة',`السعر الأصلي ${money(original)}. النسبة المسموحة ±${Math.round(priceLimitRatio*100)}%: أدخل السعر الجديد.`,{type:'number',value:String(current),min:'0',step:'0.01'});if(entered===null)return;const value=Number(entered);if(!Number.isFinite(value)||value<=0){toast('السعر غير صحيح؛ لم يتم التعديل');return}const min=original*(1-priceLimitRatio),max=original*(1+priceLimitRatio);if(value<min||value>max){const key=await securePassword('secondary','السعر خارج الحدود','السعر خارج النطاق المسموح. أدخل كلمة المرور الإضافية:',LIMIT_PASSWORD);if(key===LIMIT_PASSWORD){}else if(key==='__ESCALATE__'){if(!(await requestActivation()))return}else return}item.customName=newName;item.customPrice=Number(value.toFixed(2));recordAdminLog('تعديل اسم وسعر داخل الفاتورة',product.code,`الاسم: ${newName}، السعر: ${money(value)}`);renderCart();toast('تم حفظ الاسم والسعر في هذه الفاتورة فقط')} 
-async function openAdvancedSettings(){if(!currentUser)return;if(currentUser.username===DEVELOPER_USERNAME){advanceUnlocked=true}else{if(advanceLocked&&!(await requestActivation()))return;const key=await securePassword('secondary','إعدادات نسبة الأسعار','أدخل كلمة مرور إعدادات نسبة الأسعار:',LIMIT_PASSWORD);if(key===LIMIT_PASSWORD){}else if(key==='__ESCALATE__'){if(!(await requestActivation()))return}else return}const entered=await openSecureModal('نسبة تعديل الأسعار',`النسبة الحالية ±${Math.round(priceLimitRatio*100)}%. أدخل النسبة الجديدة من 0 إلى 100:`,{type:'number',value:String(Math.round(priceLimitRatio*100)),min:'0',max:'100',step:'1'});if(entered===null)return;const value=Number(entered);if(!Number.isFinite(value)||value<0||value>100){toast('أدخل نسبة صحيحة بين 0 و100');return}const confirmed=await openConfirmModal(`سيتم اعتماد نسبة ±${value}% لتعديل أسعار المستخدمين. هل تريد الحفظ؟`);if(!confirmed){toast('تم إلغاء حفظ النسبة');return}priceLimitRatio=value/100;appStorage.setItem('bill:pwa:price-limit',String(value));updatePriceLimitLabel();toast(`تم حفظ نسبة التعديل الحالية: ±${value}%`)}
-async function stopScanner(){const session=++scannerSession;if(scannerTimer){cancelAnimationFrame(scannerTimer);scannerTimer=0}const controls=scannerControls;scannerControls=null;try{controls?.stop?.()}catch(e){}const stream=scannerStream;scannerStream=null;try{stream?.getTracks?.().forEach(t=>{try{t.stop()}catch(e){}})}catch(e){}const video=$('#scannerVideo');if(video){try{video.pause()}catch(e){}video.srcObject=null}scannerTorchOn=false;const modal=$('#scannerModal');if(modal){modal.classList.add('hidden');modal.setAttribute('aria-hidden','true')}const torchButton=$('#scannerTorch');if(torchButton){torchButton.classList.add('hidden');torchButton.onclick=null}const zoomControl=$('#scannerZoom');if(zoomControl){zoomControl.classList.add('hidden');zoomControl.oninput=null}return session}
-async function decodeQrImage(file){return new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(file);image.onload=async()=>{try{const canvas=document.createElement('canvas'),scale=Math.min(1,1600/Math.max(image.naturalWidth,image.naturalHeight));canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,canvas.width,canvas.height);const result=window.jsQR?.(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:'attemptBoth'});let raw=result?.data||null;if(!raw&&window.ZXingBrowser?.BrowserMultiFormatReader){try{const reader=new ZXingBrowser.BrowserMultiFormatReader(),decoded=await reader.decodeFromImageElement(image);raw=decoded?.getText?.()||decoded?.text||null}catch(error){}}URL.revokeObjectURL(url);resolve(raw)}catch(error){URL.revokeObjectURL(url);reject(error)}};image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('تعذر قراءة الصورة'))};image.src=url})}
-async function processScannedValue(raw){raw=String(raw||'').trim();if(!raw)return;if(scannerMode==='product'){await stopScanner();const found=products.find(p=>String(p.code)===raw);if(found){choose(found);toast(`تم العثور على المنتج: ${found.name}`)}else{els.search.value=raw;scheduleSuggestions();toast(`تمت قراءة الكود: ${raw}، لكن لم يتم العثور على منتج مطابق`)}els.search.focus();return}const parsed=parseLoginQr(raw);if(parsed?.username&&parsed?.password){try{const ok=await login(parsed.username,parsed.password);if(ok){await stopScanner();toast('تم تسجيل الدخول عبر QR');return}}catch(error){if(!error?.networkError){$('#scannerMessage').textContent=error.message||'بيانات QR غير صحيحة';return}}}try{const data=await centralRequest('/qr-login',{method:'POST',body:JSON.stringify({qrToken:raw,...getDeviceProfile()})});await stopScanner();appStorage.setItem(CENTRAL_TOKEN_KEY,data.token);setSession(data.user);toast('تم تسجيل الدخول عبر QR')}catch(error){$('#scannerMessage').textContent=error?.networkError?'لا يوجد اتصال. يجب أن يحتوي QR على بيانات دخول محلية بصيغة JSON أو username|password عند العمل دون إنترنت.':(error.message||'رمز QR غير صالح لهذا البرنامج')}}
-function parseLoginQr(raw){try{const data=JSON.parse(raw);const username=data.username||data.user||data.login,password=data.password||data.pass||data.key;if(username&&password)return {username:String(username).trim(),password:String(password)};return null}catch(e){}const match=raw.match(/^(?:bill(?:-bill)?\s*:\s*)?([^|;,\s]+(?:\s+[^|;,]+)?)\s*[|;,]\s*(.+)$/i);return match?{username:match[1].trim(),password:match[2].trim()}:null}
-
-function setScannerZoom(track,control){if(!track?.applyConstraints||!control)return;const value=Number(control.value);if(!Number.isFinite(value))return;track.applyConstraints({advanced:[{zoom:value}]}).catch(()=>{})}function toggleScannerTorch(track,button){if(!track?.applyConstraints)return;scannerTorchOn=!scannerTorchOn;track.applyConstraints({advanced:[{torch:scannerTorchOn}]}).then(()=>{if(button)button.textContent=scannerTorchOn?'إيقاف الكشاف':'تشغيل الكشاف'}).catch(()=>{scannerTorchOn=false;if(button)button.textContent='الكشاف غير متاح'})}
-function invoiceData(){return{id:Date.now(),number:String(Date.now()).slice(-6),date:$('#invoiceDate').value,time:formatInvoiceTime(),customerCode:$('#customerCode').value,customerName:$('#customerName').value,city:$('#customerCity').value,phone:$('#customerPhone').value,seller:$('#seller').value,section:$('#section').value,packageType:$('#packageType').value,packageCount:$('#packageCount').value,notes:$('#invoiceNotes').value,priceMode,cart}}
-function save(){if(!cart.length){toast('أضف منتجًا واحدًا على الأقل');return}const all=JSON.parse(appStorage.getItem(KEY)||'[]');all.unshift(invoiceData());appStorage.setItem(KEY,JSON.stringify(all.slice(0,500)));renderSaved();toast('تم حفظ الفاتورة محليًا')}
-function customerDisplayName(code,fallback=''){const key=String(code||'').trim();const matches=customers.filter(c=>normalize(c.name||'')===normalize(fallback||c.name||''));const found=customers.find(c=>key&&String(c.code)===key);const base=found?.name||fallback||'عميل نقدي';const same=customers.filter(c=>normalize(c.name||'')===normalize(base));if(same.length<=1)return base;const pos=Math.max(0,same.findIndex(c=>String(c.code)===String(found?.code||key)));return `${base} ${pos+1}`}
-function renderSaved(){const all=JSON.parse(appStorage.getItem(KEY)||'[]');$('#savedCount').textContent=all.length.toLocaleString('en-US');$('#savedInvoices').innerHTML=all.length?all.slice(0,20).map(x=>`<div class="saved-item"><label class="invoice-check"><input type="checkbox" data-select-invoice="${x.id}"><span></span></label><div class="saved-details"><strong>${escapeHtml(x.number)}</strong><small> · ${escapeHtml(customerDisplayName(x.customerCode,x.customerName))} · ${escapeHtml(x.date||'')}</small></div><div class="saved-actions"><button data-print="${x.id}">طباعة</button><button data-load="${x.id}">فتح</button></div></div>`).join(''):'<div class="empty-row">لا توجد فواتير محفوظة</div>';document.querySelectorAll('[data-load]').forEach(b=>b.addEventListener('click',()=>loadInvoice(Number(b.dataset.load))));document.querySelectorAll('[data-print]').forEach(b=>b.addEventListener('click',()=>{loadInvoice(Number(b.dataset.print));setTimeout(printInvoice,80)}));document.querySelectorAll('[data-select-invoice]').forEach(b=>b.addEventListener('change',updateSelectAllState));updateSelectAllState()} function selectedInvoiceIds(){return [...document.querySelectorAll('[data-select-invoice]:checked')].map(x=>Number(x.dataset.selectInvoice))} function updateSelectAllState(){const boxes=[...document.querySelectorAll('[data-select-invoice]')],master=$('#selectAllInvoices');if(!master)return;master.checked=boxes.length>0&&boxes.every(x=>x.checked);master.indeterminate=boxes.some(x=>x.checked)&&!master.checked} function downloadJson(data,filename){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)} function exportSelectedInvoices(){const ids=selectedInvoiceIds();if(!ids.length){toast('حدد فاتورة واحدة على الأقل للتصدير');return}const invoices=JSON.parse(appStorage.getItem(KEY)||'[]').filter(x=>ids.includes(Number(x.id)));downloadJson({version:2,invoices,createdAt:new Date().toISOString()},`invoices-selected-${new Date().toISOString().slice(0,10)}.json`);toast(`تم تصدير ${invoices.length.toLocaleString('en-US')} فاتورة`)} function deleteSelectedInvoices(){const ids=selectedInvoiceIds();if(!ids.length){toast('حدد فاتورة واحدة على الأقل للحذف');return}if(!confirm(`هل تريد حذف ${ids.length.toLocaleString('en-US')} فاتورة محددة؟`))return;const all=JSON.parse(appStorage.getItem(KEY)||'[]').filter(x=>!ids.includes(Number(x.id)));appStorage.setItem(KEY,JSON.stringify(all));renderSaved();toast('تم حذف الفواتير المحددة')}
-function loadInvoice(id){const x=JSON.parse(appStorage.getItem(KEY)||'[]').find(i=>i.id===id);if(!x)return;const currentMode=priceMode;Object.entries({customerCode:x.customerCode,customerName:x.customerName,customerCity:x.city,customerPhone:x.phone,seller:x.seller,section:x.section,packageType:x.packageType,packageCount:x.packageCount,invoiceDate:x.date,invoiceNotes:x.notes}).forEach(([k,v])=>{if($('#'+k))$('#'+k).value=v||''});priceMode=currentMode;cart=(x.cart||[]).map(row=>{const code=String(row?.product?.code??row?.code??'');const current=products.find(p=>String(p.code)===code);return {...row,product:current||row.product,customPrice:undefined}});selected=null;renderCart();updatePrice();toast(`تم فتح الفاتورة بأسعار ${priceMode==='wholesale'?'مستخدم 2':'مستخدم 3'} للمستخدم الحالي`)}
-function newInvoice(){cart=[];selected=null;priceMode='wholesale';advanceUnlocked=false;['customerCode','customerName','customerCity','customerPhone','seller'].forEach(id=>$('#'+id).value='');$('#invoiceNotes').value='';$('#packageCount').value='0';$('#packageType').value='';$('#section').value='بيتي';setDate();els.search.value='';els.qty.value='1';els.selected.textContent='لم يتم اختيار منتج';els.selected.classList.add('empty');updatePrice();els.search.focus()}
-function exportData(){const data={version:2,products,invoices:JSON.parse(appStorage.getItem(KEY)||'[]'),customers,customerHistory,users:getUsers(),adminLog:JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]'),createdAt:new Date().toISOString()};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));a.download=`bill-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
-async function importBackup(file){try{const data=JSON.parse(await file.text());if(!Array.isArray(data.invoices))throw Error();appStorage.setItem(KEY,JSON.stringify(data.invoices));if(Array.isArray(data.products)&&data.products.length){appStorage.setItem(PRODKEY,JSON.stringify(data.products));products=data.products.map(p=>({...p,code:String(p.code),searchText:`${normalize(p.name)} ${p.code}`}));if(searchWorker)searchWorker.postMessage({type:'init',payload:products})}if(Array.isArray(data.users)&&data.users.length){saveUsers(data.users)}if(Array.isArray(data.adminLog)){appStorage.setItem(ADMIN_LOG_KEY,JSON.stringify(data.adminLog))}renderSaved();renderUserList();toast(`تم استرداد ${data.invoices.length.toLocaleString('en-US')} فاتورة`)}catch(e){toast('ملف النسخة الاحتياطية غير صحيح')}}
-function renderPrintSheet(){
-  const d=invoiceData(),total=cart.reduce((a,x)=>{const original=unitPriceFor(x.product);return a+Number(x.customPrice??original)*x.qty},0),qty=cart.reduce((a,x)=>a+x.qty,0),rowsPerPage=35,pages=[];
-  for(let i=0;i<cart.length;i+=rowsPerPage)pages.push(cart.slice(i,i+rowsPerPage));
-  const pageRows=(rows)=>rows.map(x=>{const original=unitPriceFor(x.product),unit=Number(x.customPrice??original);return `<tr><td>${escapeHtml(x.product.code)}</td><td>${escapeHtml(x.customName??x.product.name)}</td><td>${x.qty}</td><td>${money(unit)}</td><td>${money(unit*x.qty)}</td></tr>`}).join('');
-  const pageTemplate=(rows,index,last)=>`<section class="print-page${last?' print-page-last':''}"><div class="print-head"><img class="print-logo" src="${escapeHtml(document.querySelector('.brand-logo')?.getAttribute('src')||'logo.png')}" alt="Bill"><div><h1>فاتورة مبيعات مؤقتة رقم : ${escapeHtml(d.number)}</h1></div><div>${escapeHtml(String(d.date||'').replace(/-/g,'/'))}<br>الوقت : ${escapeHtml(d.time)}</div></div><div class="print-customer">
-  <span class="customer-client"><b>العميل:</b> <span class="customer-code">${escapeHtml(d.customerCode || '—')}</span></span>
-  <span class="customer-name">${escapeHtml(d.customerName || '')}</span>
-  <span class="customer-city">البلد: ${escapeHtml(d.city || '—')}</span>
-</div><div class="print-meta"><div class="print-meta-row"><span>التاريخ: ${escapeHtml(String(d.date||'').replace(/-/g,'/'))}</span><span>الوقت: ${escapeHtml(d.time)}</span></div><div class="print-meta-row"><span>البائع: ${escapeHtml(d.seller||'—')}</span><span>القسم: ${escapeHtml(d.section||'—')}</span><span>النظام: ${effectivePriceLabel(rows[0]?.product)}</span><span>الهاتف: ${escapeHtml(d.phone||'—')}</span><span>نوع التعبئة: ${escapeHtml(d.packageType||'بدون')}</span><span class="package-count">العدد: ${escapeHtml(d.packageCount||'0')}</span></div></div><table class="print-table"><thead><tr><th>كود الصنف</th><th>الصنف</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>${pageRows(rows)}</tbody>${last?`<tfoot><tr><th colspan="2">الجملة</th><th class="qty-cell">${qty}</th><th colspan="2">${money(total)}</th></tr></tfoot>`:''}</table>${last?`<div class="print-bottom"><div class="print-summary-line"><span class="print-total">قيمة الفاتورة: <strong>${money(total)}</strong></span><span class="print-notes"><b>ملاحظات</b> ${escapeHtml(d.notes||'')}</span></div><div class="print-terms"></div></div>`:''}</section>`;
-  $('#printSheet').innerHTML=pages.map((rows,index)=>pageTemplate(rows,index,index===pages.length-1)).join('');
+async function initIndexedStorage() {
+  try {
+    await migrateLegacyStorage();
+    idbDatabase = await openIndexedDb();
+    if (idbDatabase) {
+      const data = await idbReadAll(idbDatabase);
+      Object.entries(data).forEach(([key, value]) =>
+        storageCache.set(key, String(value)),
+      );
+      for (const key of legacyKeys()) {
+        if (!storageCache.has(key)) {
+          const value = legacyGet(key);
+          if (value !== null) {
+            storageCache.set(key, value);
+            idbPut(key, value);
+          }
+        }
+      }
+      idbReady = true;
+    }
+  } catch (e) {
+    for (const key of legacyKeys()) {
+      const value = legacyGet(key);
+      if (value !== null) storageCache.set(key, value);
+    }
+  }
 }
-async function printInvoice(){if(!cart.length){toast('أضف منتجًا قبل الطباعة');return}renderPrintSheet();const logo=document.querySelector('#printSheet .print-logo');if(logo&&(!logo.complete||!logo.naturalWidth)){await new Promise(resolve=>{const done=()=>{logo.removeEventListener('load',done);logo.removeEventListener('error',done);resolve()};logo.addEventListener('load',done,{once:true});logo.addEventListener('error',done,{once:true});setTimeout(done,1200)})}const oldTitle=document.title;document.title=(($('#customerName').value||'').trim()||'no name');window.print();setTimeout(()=>{document.title=oldTitle},1500)}
-els.search.addEventListener('input',scheduleSuggestions);els.search.addEventListener('keydown',e=>{const list=[...els.suggestions.querySelectorAll('.suggestion[data-index]')];if(e.key==='ArrowDown'){e.preventDefault();activeSuggestion=Math.min(activeSuggestion+1,list.length-1);list.forEach((x,i)=>x.classList.toggle('active',i===activeSuggestion))}else if(e.key==='ArrowUp'){e.preventDefault();activeSuggestion=Math.max(activeSuggestion-1,0);list.forEach((x,i)=>x.classList.toggle('active',i===activeSuggestion))}else if(e.key==='Enter'&&activeSuggestion>=0){e.preventDefault();list[activeSuggestion]?.dispatchEvent(new MouseEvent('mousedown'))}else if(e.key==='Escape')els.suggestions.classList.remove('open')});document.addEventListener('click',e=>{if(!e.target.closest('.product-search'))els.suggestions.classList.remove('open')});document.querySelectorAll('.price-btn').forEach(b=>b.addEventListener('click',()=>{if(cart.length){toast('لا يمكن تغيير النظام بعد إضافة المنتجات');return}priceMode=b.dataset.price;updatePrice()}));$('#addProduct').addEventListener('click',add);els.qty.addEventListener('keydown',e=>{if(e.key==='Enter')add()});$('#saveInvoice').addEventListener('click',save);$('#printInvoice').addEventListener('click',printInvoice);$('#newInvoice').addEventListener('click',newInvoice);$('#exportData').addEventListener('click',exportData);$('#exportSelected').addEventListener('click',exportSelectedInvoices);$('#deleteSelected').addEventListener('click',deleteSelectedInvoices);$('#selectAllInvoices').addEventListener('change',e=>{document.querySelectorAll('[data-select-invoice]').forEach(x=>{x.checked=e.target.checked});updateSelectAllState()});$('#importBackup').addEventListener('change',e=>{if(e.target.files[0])importBackup(e.target.files[0]);e.target.value=''});$('#customerCode').addEventListener('input',e=>renderCustomer(e.target.value));document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='p'){e.preventDefault();printInvoice()}if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();save()}if(e.ctrlKey&&e.key.toLowerCase()==='n'){e.preventDefault();newInvoice()}if(e.key==='Delete'&&document.activeElement.classList.contains('line-qty')){const i=Number(document.activeElement.dataset.i);cart.splice(i,1);renderCart()}});window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;$('#installBtn').classList.remove('hidden')});$('#installBtn').addEventListener('click',async()=>{if(deferredPrompt){deferredPrompt.prompt();deferredPrompt=null}});function showUpdateButton(){const button=$('#updateBtn');if(button&&pendingRegistration?.waiting)button.classList.remove('hidden')}function watchForUpdates(registration){pendingRegistration=registration;const showIfWaiting=()=>{if(registration.waiting)showUpdateButton()};registration.addEventListener('updatefound',()=>{const worker=registration.installing;if(!worker)return;worker.addEventListener('statechange',()=>{if(worker.state==='installed')showIfWaiting()})});showIfWaiting();registration.update().catch(()=>{});setInterval(()=>registration.update().catch(()=>{}),10*60*1000)}$('#updateBtn').addEventListener('click',()=>{const waiting=pendingRegistration?.waiting;if(!waiting){location.reload();return}$('#updateBtn').textContent='جاري التحديث...';$('#updateBtn').disabled=true;let reloaded=false;const reload=()=>{if(reloaded)return;reloaded=true;location.reload()};navigator.serviceWorker.addEventListener('controllerchange',reload,{once:true});waiting.postMessage({type:'SKIP_WAITING'});setTimeout(reload,5000)});window.addEventListener('load',()=>setTimeout(()=>$('#startupSplash')?.classList.add('is-hidden'),650));$('#unlockProgram').addEventListener('click',requestActivation);$('#passwordForm').addEventListener('submit',e=>{e.preventDefault();const input=$('#modalInput');if(input.value.trim())closeSecureModal(input.value.trim());else $('#modalError').textContent='أدخل قيمة صحيحة'});$('#modalCancel').addEventListener('click',()=>closeSecureModal(null));$('#passwordModal').addEventListener('click',e=>{if(e.target.id==='passwordModal')closeSecureModal(null)});$('#confirmOk').addEventListener('click',()=>closeConfirmModal(true));$('#confirmCancel').addEventListener('click',()=>closeConfirmModal(false));$('#confirmModal').addEventListener('click',e=>{if(e.target.id==='confirmModal')closeConfirmModal(false)});$('#accountMenuButton').addEventListener('click',openAccountMenu);$('#accountMenuClose').addEventListener('click',closeAccountMenu);$('#accountMenuModal').addEventListener('click',e=>{if(e.target.id==='accountMenuModal')closeAccountMenu()});$('#accountManageUsers').addEventListener('click',()=>{closeAccountMenu();openUserManager()});$('#accountManageDevices').addEventListener('click',openDevicesManager);$('#accountLoginAttempts').addEventListener('click',openLoginAttempts);$('#closeLoginAttempts').addEventListener('click',closeLoginAttempts);$('#loginAttemptsModal').addEventListener('click',e=>{if(e.target.id==='loginAttemptsModal')closeLoginAttempts()});$('#deviceUnlockButton').addEventListener('click',unlockDeviceWithZaxcel);$('#closeDevices').addEventListener('click',closeDevicesManager);$('#devicesModal').addEventListener('click',e=>{if(e.target.id==='devicesModal')closeDevicesManager()});$('#accountPriceSettings').addEventListener('click',()=>{closeAccountMenu();openAdvancedSettings()});$('#accountLogout').addEventListener('click',logoutUser);$('#closeUserManager').addEventListener('click',closeUserManager);$('#userForm').addEventListener('submit',addUser);$('#exportUsers').addEventListener('click',()=>{if(currentUser?.role!=='developer'){toast('هذه الخاصية للمطوّر فقط');return}downloadJson({version:1,users:getUsers().filter(user=>user.username!==DEVELOPER_USERNAME).map(({password,...user})=>user),updatedAt:new Date().toISOString()},'users.json');toast('تم تنزيل users.json')});$('#importUsers').addEventListener('change',e=>{if(e.target.files[0])importUsersFile(e.target.files[0]);e.target.value=''});$('#closeProductDetails').addEventListener('click',closeProductDetails);$('#productDetailsModal').addEventListener('click',e=>{if(e.target.id==='productDetailsModal')closeProductDetails()});$('#scannerClose').addEventListener('click',stopScanner);$('#scanFromImage').addEventListener('click',()=>$('#scannerFile').click());$('#scannerFile').addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;try{const raw=await decodeQrImage(file);if(!raw)throw new Error('لم يتم العثور على QR واضح في الصورة');await processScannedValue(raw)}catch(error){$('#scannerMessage').textContent=error.message||'تعذر قراءة QR من الصورة'}});$('#scannerModal').addEventListener('click',e=>{if(e.target.id==='scannerModal')stopScanner()});$('#scanProductButton').addEventListener('click',()=>openScanner('product'));$('#loginQrButton').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openScanner('login')});$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();await loginFromForm(e)});$('#chooseDataFolder').addEventListener('click',()=>$('#dataFolderInput')?.click());$('#dataFolderInput').addEventListener('change',async e=>{const files=e.target.files;if(files?.length)await loadSelectedDataFolder(files);e.target.value=''});$('#chooseDataFiles').addEventListener('click',()=>$('#dataFilesInput')?.click());$('#dataFilesInput').addEventListener('change',async e=>{const files=e.target.files;if(files?.length)await loadSelectedDataFolder(files);e.target.value=''});async function showCartProductDetails(index){if(!currentUser||currentUser.role!=='developer'){toast('معلومات المنتج للمطوّر فقط');return}if(advanceLocked&&!(await requestActivation()))return;const key=await securePassword('primary','معلومات المنتج','أدخل كلمة مرور المطور:',ADVANCE_PASSWORD);if(key===ADVANCE_PASSWORD){}else if(key==='__ESCALATE__'){if(!(await requestActivation()))return}else return;const item=cart[index];const p=item?.product;if(!p)return;const box=$('#productDetailsBody');if(!box)return;const detailRow=(label,value,dir='auto')=>`<div class="product-detail-row"><strong>${label} :</strong><span dir="${dir}">${escapeHtml(value??'غير موجود')}</span></div>`;box.innerHTML=[detailRow('كود المنتج',p.code,'ltr'),detailRow('اسم المنتج',p.name||'','rtl'),detailRow('الحد الأدنى لإعادة الطلب',p.Min_Reorder,'ltr'),detailRow('الخصم',p.I_Disc,'ltr'),detailRow('سعر الوسيط',p.I_S_Price_N,'ltr'),detailRow('سعر الشراء',p.I_P_Price,'ltr'),detailRow('سعر مستخدم 2',p.wholesale,'ltr'),detailRow('سعر مستخدم 3',p.retail,'ltr')].join('');$('#productDetailsModal').classList.remove('hidden')}function closeProductDetails(){$('#productDetailsModal')?.classList.add('hidden')}
-function saveProducts(){products=products.map(p=>{const item={code:String(p.code).trim(),name:String(p.name||'').trim(),wholesale:Number(p.wholesale),retail:Number(p.retail),Min_Reorder:Number(p.Min_Reorder||0),I_Disc:Number(p.I_Disc||0),I_S_Price_N:Number(p.I_S_Price_N??0),I_P_Price:Number(p.I_P_Price??0)};return {...item,searchText:`${normalize(item.name)} ${item.code}`}});appStorage.setItem(PRODKEY,JSON.stringify(products));if(searchWorker){try{searchWorker.postMessage({type:'init',payload:products})}catch(e){}}}
-function renderProductManager(){const box=$('#productManagerList');if(!box)return;const query=normalize($('#productManagerSearch')?.value||'');if(!query){box.innerHTML='<div class="empty-row">اكتب اسم المنتج أو الكود للبحث</div>';return}const rows=products.filter(p=>p.searchText.includes(query));box.innerHTML=rows.length?rows.map(p=>`<div class="product-admin-row"><div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.code)} · جملة ${money(p.wholesale)} · تجزئة ${money(p.retail)}</small></div><div class="user-row-actions"><button type="button" class="btn ghost small" data-product-edit="${escapeHtml(p.code)}">تعديل</button><button type="button" class="btn danger small" data-product-delete="${escapeHtml(p.code)}">حذف</button></div></div>`).join(''):'<div class="empty-row">لا توجد منتجات مطابقة</div>';box.querySelectorAll('[data-product-edit]').forEach(b=>b.addEventListener('click',()=>editManagedProduct(b.dataset.productEdit)));box.querySelectorAll('[data-product-delete]').forEach(b=>b.addEventListener('click',()=>deleteManagedProduct(b.dataset.productDelete)));const logBox=$('#productManagerLog');if(logBox){const logs=JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]').filter(x=>/منتج|products\.json|إدارة المنتجات/.test(`${x.action} ${x.target}`)).slice(0,30);logBox.innerHTML=logs.length?logs.map(x=>`<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target||'—')}</span><small>${escapeHtml(x.actor||'—')} · ${escapeHtml(new Date(x.time).toLocaleString('ar-EG'))}</small></div>`).join(''):'<div class="empty-row">لا توجد عمليات مسجلة</div>'}}
-function resetProductForm(){['productEditingCode','productCode','productName','productWholesale','productRetail'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});$('#productSubmit')&&($('#productSubmit').textContent='إضافة المنتج')}
-function openProductManager(){if(!currentUser||currentUser.role!=='developer'){toast('إدارة المنتجات للمطوّر فقط');return}securePassword('secondary','إدارة المنتجات','أدخل كلمة مرور إدارة الحساب:',LIMIT_PASSWORD).then(key=>{if(key!==LIMIT_PASSWORD)return;recordAdminLog('مشاهدة إدارة المنتجات','products.json');renderProductManager();$('#productManagerModal').classList.remove('hidden');resetProductForm()})}
-function closeProductManager(){($('#productManagerModal'))?.classList.add('hidden')}
-function editManagedProduct(code){const p=products.find(x=>String(x.code)===String(code));if(!p)return;$('#productEditingCode').value=p.code;$('#productCode').value=p.code;$('#productName').value=p.name;$('#productWholesale').value=p.wholesale;$('#productRetail').value=p.retail;$('#productSubmit').textContent='حفظ التعديل';$('#productName').focus()}
-function submitManagedProduct(e){e.preventDefault();if(!currentUser||currentUser.role!=='developer'){toast('إدارة المنتجات للمطوّر فقط');return}const editing=$('#productEditingCode').value.trim(),code=$('#productCode').value.trim(),name=$('#productName').value.trim(),wholesale=Number($('#productWholesale').value),retail=Number($('#productRetail').value);if(!code||!name||(!Number.isFinite(wholesale)||wholesale<=0)&&(!Number.isFinite(retail)||retail<=0)){$('#productManagerError').textContent='أدخل الكود والاسم والأسعار بشكل صحيح';return}if(!editing&&products.some(p=>p.code===code)){ $('#productManagerError').textContent='كود المنتج موجود بالفعل';return}if(editing&&code!==editing&&products.some(p=>p.code===code)){ $('#productManagerError').textContent='الكود الجديد مستخدم بالفعل';return}const p=editing?products.find(x=>x.code===editing):null;if(p){p.code=code;p.name=name;p.wholesale=wholesale;p.retail=retail;recordAdminLog('تعديل منتج',code,`الاسم: ${name}`);toast('تم تعديل المنتج')}else{products.push({code,name,wholesale,retail});recordAdminLog('إضافة منتج',code,`الاسم: ${name}`);toast('تمت إضافة المنتج')}saveProducts();resetProductForm();$('#productManagerError').textContent='';renderProductManager()}
-async function deleteManagedProduct(code){if(!currentUser||currentUser.role!=='developer'){toast('حذف المنتجات للمطوّر فقط');return}const p=products.find(x=>x.code===code);if(!p)return;if(!(await openConfirmModal(`هل تريد حذف المنتج «${p.name}»؟`)))return;products=products.filter(x=>x.code!==code);saveProducts();recordAdminLog('حذف منتج',code,p.name);renderProductManager();toast('تم حذف المنتج')}
-function exportProductsFile(){if(!currentUser||currentUser.role!=='developer'){toast('تصدير المنتجات للمطوّر فقط');return}recordAdminLog('تصدير المنتجات','products.json');downloadJson({version:1,products:products.map(({searchText,...p})=>p),logs:JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]'),exportedAt:new Date().toISOString()},'products.json');toast('تم تصدير ملف المنتجات كاملًا')}
-async function importProductsFile(file){if(!currentUser||currentUser.role!=='developer'){toast('استيراد المنتجات للمطوّر فقط');return}try{const data=JSON.parse(await file.text()),items=Array.isArray(data)?data:data.products;if(!Array.isArray(items)||!items.length||items.some(p=>{const w=Number(p.wholesale),r=Number(p.retail);return !String(p.code||'').trim()||((!Number.isFinite(w)||w<=0)&&(!Number.isFinite(r)||r<=0))}))throw Error();products=items.map(p=>({code:String(p.code).trim(),name:String(p.name||p.code).trim(),wholesale:Number(p.wholesale),retail:Number(p.retail),searchText:`${normalize(String(p.name||p.code).trim())} ${String(p.code).trim()}`}));saveProducts();recordAdminLog('استيراد المنتجات','products.json',`${products.length} منتج`);renderProductManager();toast(`تم استيراد ${products.length} منتج`)}catch(e){toast('ملف المنتجات غير صحيح')}}
-$('#accountManageProducts').addEventListener('click',()=>{closeAccountMenu();openProductManager()});function saveCustomers(){customers=customers.map(c=>({code:String(c.code).trim(),name:String(c.name||'').trim(),city:String(c.city||''),phone:String(c.phone||''),address:String(c.address||'')}));appStorage.setItem('bill:pwa:customers:v1',JSON.stringify(customers))}
-function suggestCustomerCode(){let n=1;const used=new Set(customers.map(c=>String(c.code)));while(used.has(String(n)))n++;return String(n)}
-function renderCustomerManager(){const box=$('#customerManagerList');if(!box)return;const query=normalize($('#customerManagerSearch')?.value||'');if(!query){box.innerHTML='<div class="empty-row">اكتب اسم العميل أو الكود للبحث</div>';return}const rows=customers.filter(c=>normalize(`${c.name} ${c.code} ${c.city||''} ${c.phone||''}`).includes(query));box.innerHTML=rows.length?rows.map(c=>`<div class="customer-admin-row"><div><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.code)} · ${escapeHtml(c.city||'—')} · ${escapeHtml(c.phone||'—')}</small></div><div class="user-row-actions"><button type="button" class="btn ghost small" data-customer-edit="${escapeHtml(c.code)}">تعديل</button><button type="button" class="btn danger small" data-customer-delete="${escapeHtml(c.code)}">حذف</button></div></div>`).join(''):'<div class="empty-row">لا يوجد عميل مطابق</div>';box.querySelectorAll('[data-customer-edit]').forEach(b=>b.addEventListener('click',()=>editManagedCustomer(b.dataset.customerEdit)));box.querySelectorAll('[data-customer-delete]').forEach(b=>b.addEventListener('click',()=>deleteManagedCustomer(b.dataset.customerDelete)));const logBox=$('#customerManagerLog');if(logBox){const logs=JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]').filter(x=>/عميل|customers\.json|إدارة العملاء/.test(`${x.action} ${x.target}`)).slice(0,30);logBox.innerHTML=logs.length?logs.map(x=>`<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target||'—')}</span><small>${escapeHtml(x.actor||'—')} · ${escapeHtml(new Date(x.time).toLocaleString('ar-EG'))}</small></div>`).join(''):'<div class="empty-row">لا توجد عمليات مسجلة</div>'}}
-function resetCustomerForm(){['customerEditingCode','managedCustomerCode','managedCustomerName','managedCustomerCity','managedCustomerPhone'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});$('#customerSubmit')&&($('#customerSubmit').textContent='إضافة العميل');const code=$('#managedCustomerCode');if(code){code.placeholder=suggestCustomerCode();code.value=suggestCustomerCode()}}
-function openCustomerManager(){if(!currentUser||currentUser.role!=='developer'){toast('إدارة العملاء للمطوّر فقط');return}securePassword('secondary','إدارة العملاء','أدخل كلمة مرور إدارة الحساب:',LIMIT_PASSWORD).then(key=>{if(key!==LIMIT_PASSWORD)return;recordAdminLog('مشاهدة إدارة العملاء','customers.json');resetCustomerForm();renderCustomerManager();$('#customerManagerModal').classList.remove('hidden');$('#customerManagerSearch').focus()})}
-function closeCustomerManager(){($('#customerManagerModal'))?.classList.add('hidden')}
-function editManagedCustomer(code){const c=customers.find(x=>String(x.code)===String(code));if(!c)return;$('#customerEditingCode').value=c.code;$('#managedCustomerCode').value=c.code;$('#managedCustomerName').value=c.name||'';$('#managedCustomerCity').value=c.city||'';$('#managedCustomerPhone').value=c.phone||'';$('#customerSubmit').textContent='حفظ التعديل';$('#managedCustomerName').focus()}
-function submitManagedCustomer(e){e.preventDefault();if(!currentUser||currentUser.role!=='developer'){toast('إدارة العملاء للمطوّر فقط');return}const editing=$('#customerEditingCode').value.trim(),code=$('#managedCustomerCode').value.trim()||suggestCustomerCode(),name=$('#managedCustomerName').value.trim(),city=$('#managedCustomerCity').value.trim(),phone=$('#managedCustomerPhone').value.trim();if(!name){$('#customerManagerError').textContent='أدخل اسم العميل';return}if(customers.some(c=>String(c.code)===code&&String(c.code)!==editing)){$('#customerManagerError').textContent='كود العميل محجوز لعميل آخر';return}const c=editing?customers.find(x=>String(x.code)===editing):null;if(c){c.code=code;c.name=name;c.city=city;c.phone=phone;recordAdminLog('تعديل عميل',code,`الاسم: ${name}`);toast('تم تعديل بيانات العميل')}else{customers.push({code,name,city,phone});recordAdminLog('إضافة عميل',code,`الاسم: ${name}`);toast('تمت إضافة العميل')}saveCustomers();$('#customerManagerError').textContent='';resetCustomerForm();renderCustomerManager()}
-async function deleteManagedCustomer(code){if(!currentUser||currentUser.role!=='developer'){toast('حذف العملاء للمطوّر فقط');return}const c=customers.find(x=>String(x.code)===String(code));if(!c)return;if(!(await openConfirmModal(`هل تريد حذف العميل «${c.name}»؟`)))return;customers=customers.filter(x=>String(x.code)!==String(code));saveCustomers();recordAdminLog('حذف عميل',code,c.name);renderCustomerManager();toast('تم حذف العميل')}
-function exportCustomersFile(){if(!currentUser||currentUser.role!=='developer'){toast('تصدير العملاء للمطوّر فقط');return}recordAdminLog('تصدير العملاء','customers.json');downloadJson({version:1,customers,logs:JSON.parse(appStorage.getItem(ADMIN_LOG_KEY)||'[]'),exportedAt:new Date().toISOString()},'customers.json');toast('تم تصدير ملف العملاء كاملًا')}
-async function importCustomersFile(file){if(!currentUser||currentUser.role!=='developer'){toast('استيراد العملاء للمطوّر فقط');return}try{const data=JSON.parse(await file.text()),items=Array.isArray(data)?data:data.customers;if(!Array.isArray(items)||!items.length||items.some(c=>!String(c.code||'').trim()||!String(c.name||'').trim()))throw Error();const codes=items.map(c=>String(c.code).trim());if(new Set(codes).size!==codes.length)throw Error();customers=items.map(c=>({code:String(c.code).trim(),name:String(c.name).trim(),city:String(c.city||''),phone:String(c.phone||''),address:String(c.address||'')}));saveCustomers();recordAdminLog('استيراد العملاء','customers.json',`${customers.length} عميل`);renderCustomerManager();toast(`تم استيراد ${customers.length} عميل`)}catch(e){toast('ملف العملاء غير صحيح')}}
-$('#closeProductManager').addEventListener('click',closeProductManager);$('#productManagerModal').addEventListener('click',e=>{if(e.target.id==='productManagerModal')closeProductManager()});$('#productForm').addEventListener('submit',submitManagedProduct);$('#productManagerSearch').addEventListener('input',renderProductManager);$('#exportProducts').addEventListener('click',exportProductsFile);$('#importProducts').addEventListener('change',e=>{if(e.target.files[0])importProductsFile(e.target.files[0]);e.target.value='' });$('#accountManageCustomers').addEventListener('click',()=>{closeAccountMenu();openCustomerManager()});$('#closeCustomerManager').addEventListener('click',closeCustomerManager);$('#customerManagerModal').addEventListener('click',e=>{if(e.target.id==='customerManagerModal')closeCustomerManager()});$('#customerForm').addEventListener('submit',submitManagedCustomer);$('#customerManagerSearch').addEventListener('input',renderCustomerManager);$('#exportCustomers').addEventListener('click',exportCustomersFile);$('#importCustomers').addEventListener('change',e=>{if(e.target.files[0])importCustomersFile(e.target.files[0]);e.target.value='' });const ACCEPTED_DATA_FILES=Object.freeze(['product.json','products.json','users.json','customer.json','customers.json','customer_history.json']);
-function dataFilePath(file){return String(file?.webkitRelativePath||file?.name||'').replaceAll('\\\\','/');}
-function acceptedDataFile(file){const name=String(file?.name||'').toLowerCase();return name.endsWith('.mdb')||name.endsWith('.json')}
-async function readFolderFile(files,names){const wantedNames=(Array.isArray(names)?names:[names]).map(x=>String(x).toLowerCase());const wanted=files.find(file=>wantedNames.includes(String(file.name||'').toLowerCase()));return wanted?await wanted.text():null}async function readAllJsonDataFiles(files){const result={products:[],customers:[],customerHistory:[],users:[]};for(const file of files.filter(item=>String(item?.name||'').toLowerCase().endsWith('.json'))){try{const parsed=JSON.parse(await file.text()),name=String(file.name||'').toLowerCase(),source=Array.isArray(parsed)?parsed:(parsed&&typeof parsed==='object'?parsed:{}),add=(key,value)=>{if(Array.isArray(value))result[key].push(...value)};if(name.includes('history'))add('customerHistory',Array.isArray(source)?source:(source.customerHistory||source.customer_history||source.history||source.data));else if(name.includes('customer'))add('customers',Array.isArray(source)?source:(source.customers||source.customer||source.data||source.rows||source.records));else if(name.includes('product')||name.includes('item'))add('products',Array.isArray(source)?source:(source.products||source.product||source.items||source.data||source.rows||source.records));else if(name.includes('user')||name.includes('account'))add('users',Array.isArray(source)?source:(source.users||source.user||source.accounts||source.data||source.rows||source.records));else{add('products',source.products);add('customers',source.customers);add('customerHistory',source.customerHistory||source.customer_history||source.history);add('users',source.users)}}catch(e){console.warn('JSON file skipped',file.name,e)}}return result}
-function parseDataFile(text,key){if(!text)return null;try{const data=JSON.parse(text);if(Array.isArray(data))return data;if(!data||typeof data!=='object')return null;const aliases=[key,key.endsWith('s')?key.slice(0,-1):key,`${key}s`,'data','rows','records'];const found=Object.keys(data).find(name=>aliases.some(alias=>String(name).toLowerCase()===String(alias).toLowerCase()));return found&&Array.isArray(data[found])?data[found]:null}catch(e){return null}}
-function updateDataFolderStatus(found,rejected,hasMdb){const status=$('#dataFolderStatus');if(!status)return;const lines=[];if(found.length)lines.push(`<strong>الملفات المعتمدة:</strong> ${found.map(x=>escapeHtml(x)).join(' · ')}`);if(rejected.length)lines.push(`<strong class="data-folder-rejected">تم تجاهل:</strong> ${rejected.map(x=>escapeHtml(x)).join(' · ')}`);if(hasMdb)lines.push('<small>تم تحديد database.mdb؛ ستتم معالجته تلقائيًا داخل التطبيق.</small>');status.innerHTML=lines.join('<br>')||'لم يتم العثور على ملف قاعدة بيانات معتمد';}
-function findMdbTable(reader, names){let tableNames=[];try{tableNames=reader.getTableNames({normalTables:true})}catch(e){return null};const wanted=names.map(x=>x.toLowerCase());const match=tableNames.find(name=>wanted.includes(String(name).toLowerCase()));return match?reader.getTable(match):null;}
-function mdbColumn(row,names){const keys=Object.keys(row||{});const wanted=names.map(x=>x.toLowerCase());const key=keys.find(k=>wanted.includes(String(k).toLowerCase()));return key===undefined?null:row[key];}
-async function readMdb(file){
- if(!file||!String(file.name||'').toLowerCase().endsWith('.mdb'))throw Error('ملف MDB غير صالح');
- if(!window.MDBReader)throw Error('محرك MDB غير متاح داخل التطبيق');
- const buffer=await file.arrayBuffer(),reader=new window.MDBReader(window.Buffer.from(buffer));
- const safeTable=(names)=>{try{return findMdbTable(reader,names)}catch(e){return null}};
- const itemTable=safeTable(['Items_Names','Items','Products','Product','product']);
- const customerTable=safeTable(['Cus_Names','Customers','Customer','customer']);
- const userTable=safeTable(['Users','User','Accounts','users','account']);
- const historyTable=safeTable(['Customer_History','CustomerHistory','Customers_History','Sales_History','Purchase_History','Purchases','Invoice_Items','customer_history','history']);
- const rows=(table)=>{try{return table?table.getData():[]}catch(e){return[]}};
- const number=(v)=>{const n=Number(v);return Number.isFinite(n)?n:0};
- const mdbProducts=rows(itemTable).map(row=>({code:String(mdbColumn(row,['I_Code','Code','Item_Code','Product_Code','code'])??'').trim(),name:String(mdbColumn(row,['I_Name','Name','Item_Name','Product_Name','name'])??'').trim(),wholesale:number(mdbColumn(row,['I_S_Price_W','Wholesale','Price2','User2','wholesale'])),retail:number(mdbColumn(row,['I_S_Price_P','Retail','Price3','User3','retail']))})).filter(x=>x.code);
- const mdbCustomers=rows(customerTable).map(row=>({code:String(mdbColumn(row,['Cus_Code','Code','Customer_Code','code'])??'').trim(),name:String(mdbColumn(row,['Cus_Name','Name','Customer_Name','name'])??'').trim(),city:String(mdbColumn(row,['Cus_City','City','city'])??'').trim(),address:String(mdbColumn(row,['Cus_Address','Address','address'])??'').trim(),phone:String(mdbColumn(row,['Tel_1','Phone','Tel','phone'])??'').trim()})).filter(x=>x.code);
- const mdbHistory=rows(historyTable).map(row=>({customerCode:String(mdbColumn(row,['Customer_Code','Cus_Code','CustomerCode','Code','customer_code'])??'').trim(),invoiceCount:Number(mdbColumn(row,['Invoice_Count','InvoiceCount','Count','invoice_count'])||1)||1,items:[{code:String(mdbColumn(row,['I_Code','Item_Code','Product_Code','ProductCode','code'])??'').trim(),name:String(mdbColumn(row,['I_Name','Item_Name','Product_Name','name'])??'').trim(),lastPrice:Number(mdbColumn(row,['Price','Unit_Price','Last_Price','price'])||0)||0,lastQty:Number(mdbColumn(row,['Qty','Quantity','Last_Qty','quantity'])||0)||0,mode:String(mdbColumn(row,['Mode','Price_Mode','mode'])||'wholesale')}]})).filter(x=>x.customerCode&&x.items[0].code);
- const mdbUsers=rows(userTable).map(row=>({username:String(mdbColumn(row,['Username','UserName','Login','Name','username'])??'').trim(),password:String(mdbColumn(row,['Password','Pass','UserPassword','password'])??''),role:String(mdbColumn(row,['Role','Type','role'])??'user').toLowerCase()==='developer'?'developer':'user',active:mdbColumn(row,['Active','Enabled','active'])!==false})).filter(x=>x.username&&x.password);
- let tables=[];try{tables=reader.getTableNames({normalTables:true})}catch(e){} return {products:mdbProducts,customers:mdbCustomers,users:mdbUsers,customerHistory:mdbHistory,tables};
+const $ = (s) => {
+  try {
+    return document.querySelector(s);
+  } catch (e) {
+    return null;
+  }
+};
+window.addEventListener("error", (e) => {
+  console.warn("واجهة: عنصر أو مفتاح غير متاح", e.error || e.message);
+  e.preventDefault();
+});
+window.addEventListener("unhandledrejection", (e) => {
+  console.warn("واجهة: خطأ غير متوقع", e.reason);
+  e.preventDefault();
+});
+const els = {
+  search: $("#productSearch"),
+  suggestions: $("#suggestions"),
+  qty: $("#quantity"),
+  price: $("#selectedPrice"),
+  selected: $("#selectedProduct"),
+  items: $("#invoiceItems"),
+  itemsCount: $("#itemsCount"),
+  totalQty: $("#totalQty"),
+  grand: $("#grandTotal"),
+  toast: $("#toast"),
+};
+let products = [],
+  customers = [],
+  customerHistory = [],
+  cart = [],
+  selected = null,
+  priceMode = "wholesale",
+  activeSuggestion = -1,
+  deferredPrompt = null,
+  searchTimer = 0,
+  searchWorker = null,
+  scannerTimer = 0,
+  scannerControls = null,
+  scannerStream = null,
+  scannerTorchOn = false,
+  scannerMode = "",
+  scannerSession = 0,
+  advanceUnlocked = false,
+  advanceLocked = appStorage.getItem("bill:pwa:advance-locked") === "1",
+  pendingRegistration = null;
+const ADVANCE_PASSWORD = "369321951Saif",
+  LIMIT_PASSWORD = "741789159Saif",
+  ACTIVATION_PASSWORD = "Saif_Server_Activete";
+const savedPriceLimit = appStorage.getItem("bill:pwa:price-limit"),
+  parsedPriceLimit = Number(savedPriceLimit);
+let priceLimitRatio =
+    (savedPriceLimit === null ||
+    !Number.isFinite(parsedPriceLimit) ||
+    parsedPriceLimit < 0 ||
+    parsedPriceLimit > 100
+      ? 30
+      : parsedPriceLimit) / 100,
+  modalResolve = null,
+  confirmResolve = null;
+const KEY = "bill:pwa:invoices",
+  PRODKEY = "bill:pwa:products:v2",
+  HISTORY_KEY = "bill:pwa:history-collapsed",
+  USERS_KEY = "bill:pwa:users",
+  SESSION_KEY = "bill:pwa:session",
+  SESSION_DAY_KEY = "bill:pwa:session-day",
+  ADMIN_LOG_KEY = "bill:pwa:admin-log";
+const DEVELOPER_USERNAME = "Saif_Eldin_Ryhan",
+  DEVELOPER_PASSWORD = "258*357*159*654",
+  ZAXCEL_PASSWORD = "Zaxcel";
+const PASSWORD_FAILURES_KEY = "bill:pwa:password-failures",
+  DEVICE_BLOCKED_KEY = "bill:pwa:device-blocked";
+let dataFolderReady = false,
+  usersFileReady = false,
+  usersFileUsers = [],
+  mdbSelected = false;
+function isPrimaryDeveloperAttempt() {
+  return (
+    currentUser?.username === DEVELOPER_USERNAME ||
+    $("#loginUsername")?.value.trim() === DEVELOPER_USERNAME
+  );
 }
-async function restoreSelectedDataFolder(){try{const saved=await idbReadDatabaseFiles();if(!saved.records.length)return false;const restored=saved.records.map(record=>{const file=new File([record.blob],record.name,{type:record.type||'application/octet-stream',lastModified:record.lastModified||Date.now()});try{Object.defineProperty(file,'webkitRelativePath',{value:record.path||record.name})}catch(e){}return file});return await loadSelectedDataFolder(restored,true)}catch(e){return false}}async function loadSelectedDataFolder(files,fromStorage=false){const list=[...files];const accepted=list.filter(acceptedDataFile);const rejected=list.filter(file=>!acceptedDataFile(file)).map(dataFilePath);const found=accepted.map(dataFilePath);const mdb=accepted.find(file=>String(file.name||'').toLowerCase().endsWith('.mdb'));const status=$('#dataFolderStatus');dataFolderReady=false;if(status)status.textContent='جاري فحص ملفات قاعدة البيانات...';if(!accepted.length){updateDataFolderStatus([],rejected,false);toast('المجلد لا يحتوي على ملفات قاعدة بيانات معتمدة');return false;}try{let mdbResult=null;if(mdb){mdbResult=await readMdb(mdb);mdbSelected=true;}else{mdbSelected=false;}const jsonData=await readAllJsonDataFiles(accepted);const folderProducts=jsonData.products;const folderCustomers=jsonData.customers;const folderHistory=[...(jsonData.customerHistory||[]),...(mdbResult?.customerHistory||[])];const folderUsers=[...(jsonData.users||[]),...(mdbResult?.users||[])];const finalProducts=mdbResult?.products?.length?mdbResult.products:folderProducts;const finalCustomers=mdbResult?.customers?.length?mdbResult.customers:folderCustomers;if(finalProducts?.length){appStorage.setItem(PRODKEY,JSON.stringify(finalProducts));products=[]}if(finalCustomers?.length){appStorage.setItem('bill:pwa:customers:v1',JSON.stringify(finalCustomers));customers=[]}if(folderHistory?.length){appStorage.setItem('bill:pwa:customer-history:v1',JSON.stringify(folderHistory));customerHistory=folderHistory}if(folderUsers?.length){usersFileUsers=folderUsers.filter(user=>user&&String(user.username||'').trim()&&typeof user.password!=='undefined'&&user.username!==DEVELOPER_USERNAME).map(user=>({...user,username:String(user.username).trim(),password:String(user.password),role:user.role==='developer'?'developer':'user',active:user.active!==false}));usersFileReady=true;saveUsers(usersFileUsers)}else{usersFileUsers=[];usersFileReady=false}if(!fromStorage){const records=accepted.map((file,index)=>({id:`${String(file.name||'').toLowerCase()}::${index}`,name:String(file.name||''),path:dataFilePath(file),type:file.type||'application/octet-stream',lastModified:file.lastModified||Date.now(),blob:file}));idbReplaceDatabaseFiles(records,{paths:found,selectedAt:new Date().toISOString()})}await loadProducts();await loadCustomers();dataFolderReady=true;updateDataFolderStatus(found,rejected,Boolean(mdb));toast('تمت قراءة ملفات قاعدة البيانات بنجاح');return true}catch(error){dataFolderReady=false;if(status)status.innerHTML=`<strong>فشل قراءة قاعدة البيانات:</strong> ${escapeHtml(error.message||'ملف غير صالح')}`;toast('تعذر قراءة ملفات قاعدة البيانات');return false;}}
-function normalizeDataRecord(value,fallback=''){return value===null||value===undefined||String(value).trim()===''?fallback:String(value).trim()}
-function safeJson(raw,fallback){try{const x=JSON.parse(raw);return x??fallback}catch(e){return fallback}}
-async function loadProductsFromStorage(){return loadProducts()}async function loadCustomersFromStorage(){return loadCustomers()}initIndexedStorage().then(async()=>{await restoreSelectedDataFolder();syncProgramLock();updatePriceLimitLabel();restoreSession();syncUnlockButton();syncCentralDevice();setInterval(syncCentralDevice,15*60*1000);setDate();loadProductsFromStorage();loadCustomersFromStorage();renderCart();renderSaved();if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').then(watchForUpdates).catch(()=>{});navigator.serviceWorker.ready.then(reg=>reg.update())}
+function readPasswordFailures() {
+  try {
+    return JSON.parse(appStorage.getItem(PASSWORD_FAILURES_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function recordPasswordFailure(kind) {
+  const failures = readPasswordFailures();
+  failures[kind] = (Number(failures[kind]) || 0) + 1;
+  appStorage.setItem(PASSWORD_FAILURES_KEY, JSON.stringify(failures));
+  return failures[kind];
+}
+function clearPasswordFailure(kind) {
+  const failures = readPasswordFailures();
+  delete failures[kind];
+  appStorage.setItem(PASSWORD_FAILURES_KEY, JSON.stringify(failures));
+}
+async function blockCurrentDevice() {
+  if (isPrimaryDeveloperAttempt()) return;
+  appStorage.setItem(DEVICE_BLOCKED_KEY, "1");
+  try {
+    await centralRequest("/devices/block-self", {
+      method: "POST",
+      body: JSON.stringify(getDeviceProfile()),
+    });
+  } catch (e) {}
+  clearSession();
+  toast(
+    "تم حظر هذا الجهاز وتسجيل الخروج. لا يمكن الدخول منه إلا بعد تفعيل المطوّر الأساسي.",
+  );
+}
+async function securePassword(kind, title, message, expected) {
+  const max = kind === "activation" ? 3 : 2;
+  for (;;) {
+    const key = await openSecureModal(title, message);
+    if (key === null) return null;
+    if (key === expected) {
+      clearPasswordFailure(kind);
+      toast("تم التحقق من كلمة المرور بنجاح");
+      return key;
+    }
+    if (isPrimaryDeveloperAttempt()) {
+      $("#modalError").textContent = "كلمة المرور غير صحيحة؛ أعد المحاولة";
+      toast("كلمة المرور غير صحيحة؛ أعد المحاولة");
+      continue;
+    }
+    const count = recordPasswordFailure(kind);
+    const remaining = max - count;
+    if (remaining > 0) {
+      $("#modalError").textContent =
+        `كلمة المرور غير صحيحة. المحاولات المتبقية: ${remaining}`;
+      toast(`كلمة المرور غير صحيحة. المتبقي: ${remaining}`);
+      continue;
+    }
+    if (kind === "activation") {
+      await blockCurrentDevice();
+      return null;
+    }
+    toast("تم استنفاد المحاولات؛ سيتم طلب كلمة مرور التفعيل");
+    return "__ESCALATE__";
+  }
+}
+
+const DEFAULT_USERS = [
+  {
+    username: DEVELOPER_USERNAME,
+    password: DEVELOPER_PASSWORD,
+    role: "developer",
+    active: true,
+  },
+  { username: "مستخدم تجريبي", password: "4321", role: "user", active: true },
+];
+let currentUser = null;
+const CENTRAL_DEFAULT =
+    "https://3000-icvfeaxb8zgobmqlkioua-a3ed9d5f.us3.manus.computer/api/local",
+  DEVICE_ID_KEY = "bill:pwa:device-id",
+  CENTRAL_TOKEN_KEY = "bill:pwa:central-token";
+function getDeviceId() {
+  let id = appStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    appStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+function getDeviceProfile() {
+  const ua = navigator.userAgent || "";
+  const platform = /Android/i.test(ua)
+    ? "android"
+    : /iPhone|iPad|iPod/i.test(ua)
+      ? "ios"
+      : /Windows/i.test(ua)
+        ? "windows"
+        : /Macintosh/i.test(ua)
+          ? "macos"
+          : /Linux/i.test(ua)
+            ? "linux"
+            : "web";
+  return {
+    deviceId: getDeviceId(),
+    deviceName: `${platform === "android" ? "هاتف Android" : platform === "ios" ? "هاتف iPhone" : platform === "windows" ? "كمبيوتر Windows" : platform === "macos" ? "كمبيوتر Mac" : platform === "linux" ? "كمبيوتر Linux" : "متصفح ويب"} · ${navigator.platform || "web"}`,
+    platform,
+  };
+}
+function formatInvoiceTime(date = new Date()) {
+  const value = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return value.replace(/\sAM$/, " صباحًا").replace(/\sPM$/, " مساءً");
+}
+async function centralRequest(path, options = {}) {
+  const cfg = window.BILL_CENTRAL_CONFIG || {},
+    base = String(cfg.baseUrl || CENTRAL_DEFAULT).replace(/\/$/, "");
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), Number(cfg.timeoutMs) || 8000);
+  try {
+    const token = appStorage.getItem(CENTRAL_TOKEN_KEY);
+    if (typeof cfg.request === "function")
+      return await cfg.request(
+        path,
+        {
+          ...options,
+          headers: { ...(cfg.headers || {}), ...(options.headers || {}) },
+        },
+        { token },
+      );
+    const response = await fetch(`${base}${path}`, {
+      ...options,
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = Error(data.error || "تعذر الاتصال بالخادم المركزي");
+      error.code =
+        data.code ||
+        data.errorCode ||
+        (response.status === 403 ? "FORBIDDEN" : "CENTRAL_ERROR");
+      error.status = response.status;
+      error.serverData = data;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError" || error instanceof TypeError) {
+      const networkError = Error(
+        "تعذر الاتصال بالخادم المركزي. تحقق من الاتصال.",
+      );
+      networkError.networkError = true;
+      networkError.code = "NETWORK_ERROR";
+      throw networkError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function openScanner(mode) {
+  await stopScanner();
+  const session = ++scannerSession;
+  scannerMode = mode;
+  const modal = $("#scannerModal"),
+    video = $("#scannerVideo"),
+    message = $("#scannerMessage"),
+    torchButton = $("#scannerTorch"),
+    zoomControl = $("#scannerZoom");
+  if (!modal || !video || !message) return;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  $("#scannerTitle").textContent =
+    mode === "product" ? "مسح باركود المنتج" : "";
+  message.textContent = "جاري تشغيل الكاميرا...";
+  if (torchButton) torchButton.classList.add("hidden");
+  if (zoomControl) {
+    zoomControl.classList.add("hidden");
+    zoomControl.value = "1";
+  }
+  try {
+    if (!navigator.mediaDevices?.getUserMedia)
+      throw new Error("camera unavailable");
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: false,
+    });
+    if (session !== scannerSession) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    scannerStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    const track = stream.getVideoTracks?.()[0],
+      caps = track?.getCapabilities?.() || {};
+    if (torchButton && caps.torch) {
+      torchButton.classList.remove("hidden");
+      torchButton.textContent = "تشغيل الكشاف";
+      torchButton.onclick = () => toggleScannerTorch(track, torchButton);
+    }
+    if (zoomControl && caps.zoom) {
+      zoomControl.classList.remove("hidden");
+      zoomControl.min = String(caps.zoom.min ?? 1);
+      zoomControl.max = String(caps.zoom.max ?? 4);
+      zoomControl.step = String(caps.zoom.step ?? 0.1);
+      zoomControl.value = String(caps.zoom.min ?? 1);
+      zoomControl.oninput = () => setScannerZoom(track, zoomControl);
+    }
+    let detector = null;
+    if ("BarcodeDetector" in window) {
+      try {
+        const supported = await BarcodeDetector.getSupportedFormats(),
+          formats = [
+            "aztec",
+            "codabar",
+            "code_128",
+            "code_39",
+            "code_93",
+            "data_matrix",
+            "ean_13",
+            "ean_8",
+            "itf",
+            "pdf417",
+            "qr_code",
+            "upc_a",
+            "upc_e",
+          ].filter((x) => supported.includes(x));
+        if (formats.length) detector = new BarcodeDetector({ formats });
+      } catch (e) {}
+    }
+    message.textContent =
+      mode === "product"
+        ? "وجّه الكاميرا إلى الباركود"
+        : "وجّه الكاميرا إلى الباركود";
+    let lastRaw = "",
+      lastAt = 0,
+      busy = false;
+    const deliver = async (raw) => {
+      if (
+        !raw ||
+        busy ||
+        session !== scannerSession ||
+        (raw === lastRaw && Date.now() - lastAt < 1200)
+      )
+        return;
+      lastRaw = raw;
+      lastAt = Date.now();
+      busy = true;
+      try {
+        await processScannedValue(raw);
+      } finally {
+        busy = false;
+      }
+    };
+    const scanNative = async () => {
+      if (session !== scannerSession || !scannerStream) return;
+      try {
+        const found = detector ? await detector.detect(video) : null;
+        const raw = found?.[0]?.rawValue || "";
+        if (raw) await deliver(raw);
+      } catch (e) {}
+      if (session === scannerSession && scannerStream)
+        scannerTimer = requestAnimationFrame(scanNative);
+    };
+    if (detector) {
+      scannerTimer = requestAnimationFrame(scanNative);
+      return;
+    }
+    if (window.ZXingBrowser?.BrowserMultiFormatReader) {
+      try {
+        const reader = new ZXingBrowser.BrowserMultiFormatReader();
+        scannerControls = await reader.decodeFromVideoElement(
+          video,
+          async (result) => {
+            if (session !== scannerSession) return;
+            await deliver(result?.getText?.() || result?.text || "");
+          },
+        );
+        return;
+      } catch (e) {
+        scannerControls = null;
+      }
+    }
+    const canvas = document.createElement("canvas"),
+      ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const scanFallback = async () => {
+      if (session !== scannerSession || !scannerStream) return;
+      try {
+        if (window.jsQR && video.readyState >= 2) {
+          const width = Math.min(video.videoWidth || 640, 960),
+            height = Math.min(video.videoHeight || 480, 720);
+          if (width && height) {
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(video, 0, 0, width, height);
+            const imageData = ctx.getImageData(0, 0, width, height),
+              raw =
+                window.jsQR(imageData.data, width, height, {
+                  inversionAttempts: "attemptBoth",
+                })?.data || "";
+            if (raw) await deliver(raw);
+          }
+        }
+      } catch (e) {}
+      if (session === scannerSession && scannerStream)
+        scannerTimer = requestAnimationFrame(scanFallback);
+    };
+    scannerTimer = requestAnimationFrame(scanFallback);
+  } catch (error) {
+    if (session === scannerSession)
+      message.textContent =
+        "تعذر تشغيل الكاميرا. استخدم زر اختيار صورة أو باركود.";
+  }
+}
+async function centralLogin(username, password) {
+  const data = await centralRequest("/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password, ...getDeviceProfile() }),
+  });
+  appStorage.setItem(CENTRAL_TOKEN_KEY, data.token);
+  appStorage.setItem(
+    "bill:pwa:central-device",
+    JSON.stringify(data.device || {}),
+  );
+  return data.user;
+}
+async function syncCentralDevice() {
+  if (!appStorage.getItem(CENTRAL_TOKEN_KEY)) return;
+  try {
+    const data = await centralRequest("/heartbeat", {
+      method: "POST",
+      body: JSON.stringify(getDeviceProfile()),
+    });
+    if (data.device?.status === "blocked") {
+      clearSession();
+      toast("هذا الجهاز محظور من المطوّر");
+    }
+  } catch (e) {}
+}
+function saveUsers(users) {
+  const safe = (Array.isArray(users) ? users : [])
+    .filter(
+      (u) =>
+        u &&
+        u.username !== DEVELOPER_USERNAME &&
+        u.username !== "شيماء عبدالجواد" &&
+        u.username !== "سيف الدين ريحان",
+    )
+    .map((u) => ({
+      ...u,
+      active: u.active !== false,
+      role: u.role === "developer" ? "developer" : "user",
+    }));
+  appStorage.setItem(USERS_KEY, JSON.stringify(safe));
+  return safe;
+}
+function getUsers() {
+  let users = [];
+  try {
+    const raw = appStorage.getItem(USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) users = parsed;
+  } catch (e) {}
+  users = users
+    .filter(
+      (u) =>
+        u &&
+        u.username !== DEVELOPER_USERNAME &&
+        u.username !== "شيماء عبدالجواد" &&
+        u.username !== "سيف الدين ريحان",
+    )
+    .map((u) => ({
+      ...u,
+      active: u.active !== false,
+      role: u.role === "developer" ? "developer" : "user",
+    }));
+  if (!users.some((u) => u.username === "مستخدم تجريبي"))
+    users.push({ ...DEFAULT_USERS[1] });
+  saveUsers(users);
+  return [{ ...DEFAULT_USERS[0] }, ...users];
+}
+function save() {
+  if (!cart.length) {
+    toast("أضف منتجًا واحدًا على الأقل");
+    return;
+  }
+  const data = invoiceData(),
+    all = JSON.parse(appStorage.getItem(KEY) || "[]");
+  all.unshift(data);
+  appStorage.setItem(KEY, JSON.stringify(all.slice(0, 500)));
+  const code = String(data.customerCode || "").trim();
+  if (code) {
+    const items = data.cart.map((x) => {
+      const unit = Number(x.customPrice ?? data.unitPriceFor(x.product));
+      return {
+        code: String(x.product.code),
+        name: String(x.customName ?? x.product.name),
+        lastPrice: unit,
+        lastQty: Number(x.qty) || 0,
+        mode: data.priceMode,
+      };
+    });
+    const entry = { customerCode: code, invoiceCount: 1, items };
+    customerHistory = [
+      ...customerHistory.filter((x) => String(x.customerCode) !== code),
+      entry,
+    ];
+    appStorage.setItem(
+      "bill:pwa:customer-history:v1",
+      JSON.stringify(customerHistory),
+    );
+  }
+  renderSaved();
+  if (code) renderCustomer(code);
+  toast("تم حفظ الفاتورة وتحديث سجل مشتريات العميل");
+}
+function recordAdminLog(action, target, details = "") {
+  const logs = JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]");
+  logs.unshift({
+    id: Date.now(),
+    time: new Date().toISOString(),
+    actor: currentUser?.username || "system",
+    action,
+    target,
+    details,
+  });
+  appStorage.setItem(ADMIN_LOG_KEY, JSON.stringify(logs.slice(0, 500)));
+}
+function renderAdminLog() {
+  const box = $("#adminLog");
+  if (!box) return;
+  const logs = JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]");
+  box.innerHTML = logs.length
+    ? logs
+        .slice(0, 30)
+        .map(
+          (x) =>
+            `<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target)}</span><small>${escapeHtml(x.actor)} · ${escapeHtml(new Date(x.time).toLocaleString("ar-EG"))}</small></div>`,
+        )
+        .join("")
+    : '<div class="empty-row">لا توجد عمليات مسجلة</div>';
+}
+function availableUsers() {
+  let stored = [];
+  try {
+    const raw = appStorage.getItem(USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) stored = parsed;
+  } catch (e) {}
+  const merged = [];
+  [...DEFAULT_USERS, ...stored, ...usersFileUsers].forEach((user) => {
+    if (!user || !String(user.username || "").trim()) return;
+    const i = merged.findIndex((x) => x.username === user.username);
+    if (i >= 0) merged[i] = user;
+    else merged.push(user);
+  });
+  return merged;
+}
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function setSession(user) {
+  currentUser = user;
+  appStorage.setItem(SESSION_KEY, user.username);
+  appStorage.setItem(SESSION_DAY_KEY, todayKey());
+  $("#authGate")?.classList.add("hidden");
+  $("#appMain")?.classList.add("app-unlocked");
+  $("#logoutUser")?.classList.remove("hidden");
+  const manager = $("#manageUsers");
+  if (manager) manager.classList.toggle("hidden", user.role !== "developer");
+  renderUserList();
+}
+function clearSession() {
+  currentUser = null;
+  appStorage.removeItem(CENTRAL_TOKEN_KEY);
+  appStorage.removeItem("bill:pwa:central-device");
+  appStorage.removeItem(SESSION_KEY);
+  appStorage.removeItem(SESSION_DAY_KEY);
+  $("#authGate")?.classList.remove("hidden");
+  $("#appMain")?.classList.remove("app-unlocked");
+}
+function openAccountMenu() {
+  if (!currentUser) return;
+  $("#accountUserLabel").textContent =
+    `المستخدم الحالي: ${currentUser.username} · ${currentUser.role === "developer" ? "مطوّر" : "حساب عادي"}`;
+  $("#accountManageUsers").classList.toggle(
+    "hidden",
+    currentUser.role !== "developer",
+  );
+  $("#accountManageProducts")?.classList.toggle(
+    "hidden",
+    currentUser.role !== "developer",
+  );
+  $("#accountManageCustomers")?.classList.toggle(
+    "hidden",
+    currentUser.role !== "developer",
+  );
+  $("#accountLoginAttempts").classList.toggle(
+    "hidden",
+    currentUser.role !== "developer",
+  );
+  $("#accountManageDevices").classList.toggle(
+    "hidden",
+    currentUser.username !== DEVELOPER_USERNAME,
+  );
+  $("#accountMenuModal").classList.remove("hidden");
+}
+function closeAccountMenu() {
+  $("#accountMenuModal")?.classList.add("hidden");
+}
+async function renderDevices() {
+  const box = $("#devicesList");
+  if (!box) return;
+  box.innerHTML = '<div class="empty-row">جاري تحميل الأجهزة...</div>';
+  try {
+    const data = await centralRequest("/devices");
+    const devices = data.devices || [];
+    box.innerHTML = devices.length
+      ? devices
+          .map((x) => {
+            const d = x.device || x,
+              a = x.account || {};
+            const status =
+              d.status === "blocked"
+                ? "محظور"
+                : d.status === "revoked"
+                  ? "ملغى"
+                  : "نشط";
+            return `<div class="user-row"><div><strong>${escapeHtml(d.deviceName || "جهاز")}</strong><small>${escapeHtml(a.username || "حساب غير معروف")} · ${escapeHtml(d.platform || "unknown")} · ${status} · آخر اتصال ${escapeHtml(new Date(d.lastSeenAt).toLocaleString("ar-EG"))}</small></div><div class="user-row-actions">${d.status === "blocked" ? `<button type="button" class="btn secondary small" data-device-action="active" data-device-id="${d.id}">إلغاء الحظر</button>` : `<button type="button" class="btn danger small" data-device-action="blocked" data-device-id="${d.id}">حظر</button>`}<button type="button" class="btn ghost small" data-device-action="revoked" data-device-id="${d.id}">إلغاء التسجيل</button></div></div>`;
+          })
+          .join("")
+      : '<div class="empty-row">لا توجد أجهزة مسجلة</div>';
+    box
+      .querySelectorAll("[data-device-action]")
+      .forEach((b) =>
+        b.addEventListener("click", () =>
+          changeDeviceStatus(
+            Number(b.dataset.deviceId),
+            b.dataset.deviceAction,
+          ),
+        ),
+      );
+  } catch (e) {
+    box.innerHTML = `<div class="empty-row">${escapeHtml(e.message || "تعذر تحميل الأجهزة")}</div>`;
+  }
+}
+async function changeDeviceStatus(id, status) {
+  const labels = {
+    active: "إلغاء الحظر",
+    blocked: "حظر",
+    revoked: "إلغاء تسجيل",
+  };
+  const ok = await openConfirmModal(
+    `هل تريد تنفيذ: ${labels[status] || status} لهذا الجهاز؟`,
+  );
+  if (!ok) return;
+  try {
+    await centralRequest("/devices/action", {
+      method: "POST",
+      body: JSON.stringify({ id, status }),
+    });
+    recordAdminLog(labels[status] || status, "device:" + id);
+    await renderDevices();
+    toast("تم تحديث حالة الجهاز");
+  } catch (e) {
+    toast(e.message || "تعذر تحديث الجهاز");
+  }
+}
+function openDevicesManager() {
+  if (!currentUser || currentUser.username !== DEVELOPER_USERNAME) {
+    toast("هذه الخاصية للمطوّر الأساسي فقط");
+    return;
+  }
+  closeAccountMenu();
+  $("#devicesModal").classList.remove("hidden");
+  renderDevices();
+}
+function closeDevicesManager() {
+  $("#devicesModal")?.classList.add("hidden");
+}
+function syncUnlockButton() {
+  const button = $("#deviceUnlockButton");
+  if (button)
+    button.classList.toggle(
+      "hidden",
+      appStorage.getItem(DEVICE_BLOCKED_KEY) !== "1",
+    );
+}
+async function unlockDeviceWithZaxcel() {
+  const key = await openSecureModal(
+    "فتح البرنامج",
+    "أدخل كلمة مرور إلغاء الحظر لفتح البرنامج والسماح بتسجيل الدخول:",
+  );
+  if (key !== ZAXCEL_PASSWORD) {
+    toast("كلمة مرور Zaxcel غير صحيحة");
+    return false;
+  }
+  appStorage.removeItem(DEVICE_BLOCKED_KEY);
+  clearPasswordFailure("activation");
+  clearPasswordFailure("secondary");
+  clearPasswordFailure("primary");
+  syncUnlockButton();
+  try {
+    await centralRequest("/devices/unlock", {
+      method: "POST",
+      body: JSON.stringify({ deviceId: getDeviceId(), password: key }),
+    });
+    toast("تم فتح البرنامج بنجاح. يمكنك تسجيل الدخول الآن.");
+  } catch (error) {
+    toast("تم فتح البرنامج محليًا. يمكنك تسجيل الدخول الآن.");
+  }
+  return true;
+}
+async function renderLoginAttempts() {
+  const box = $("#loginAttemptsList");
+  if (!box) return;
+  box.innerHTML = '<div class="empty-row">جاري تحميل سجل الدخول...</div>';
+  try {
+    const data = await centralRequest("/login-attempts?limit=100");
+    const attempts = data.attempts || [];
+    box.innerHTML = attempts.length
+      ? attempts
+          .map(
+            (a) =>
+              `<div class="user-row"><div><strong>${escapeHtml(a.username || "—")}</strong><small>${escapeHtml(a.result === "success" ? "نجاح" : a.result === "blocked" ? "محظور" : "فشل")} · ${escapeHtml(a.reason || "—")} · ${escapeHtml(a.platform || "unknown")}</small></div><small>${escapeHtml(new Date(a.createdAt).toLocaleString("ar-EG"))}</small></div>`,
+          )
+          .join("")
+      : '<div class="empty-row">لا توجد محاولات مسجلة</div>';
+  } catch (error) {
+    box.innerHTML = `<div class="empty-row">${escapeHtml(error?.message || "تعذر تحميل سجل الدخول")}</div>`;
+  }
+}
+function openLoginAttempts() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("هذه الخاصية للمطورين فقط");
+    return;
+  }
+  closeAccountMenu();
+  $("#loginAttemptsModal").classList.remove("hidden");
+  renderLoginAttempts();
+}
+function closeLoginAttempts() {
+  $("#loginAttemptsModal")?.classList.add("hidden");
+}
+function logoutUser() {
+  closeAccountMenu();
+  closeUserManager();
+  clearSession();
+  $("#loginUsername")?.focus();
+  toast("تم تسجيل الخروج");
+}
+function restoreSession() {
+  const name = appStorage.getItem(SESSION_KEY),
+    day = appStorage.getItem(SESSION_DAY_KEY),
+    user = getUsers().find((x) => x.username === name);
+  if (user && user.active !== false && day === todayKey()) setSession(user);
+  else clearSession();
+}
+async function login(username, password) {
+  const primary =
+    username === DEVELOPER_USERNAME && password === DEVELOPER_PASSWORD;
+  const locallyBlocked = appStorage.getItem(DEVICE_BLOCKED_KEY) === "1";
+  if (locallyBlocked && !primary)
+    throw Error(
+      "لا يمكن تسجيل الدخول من هذا الجهاز لأنه محظور. يجب فتحه بواسطة المطوّر الأساسي أو من خلال خيار فتح الجهاز.",
+    );
+  if (primary) {
+    appStorage.removeItem(DEVICE_BLOCKED_KEY);
+    appStorage.removeItem(CENTRAL_TOKEN_KEY);
+    appStorage.removeItem("bill:pwa:central-device");
+    setSession({
+      username: DEVELOPER_USERNAME,
+      password: DEVELOPER_PASSWORD,
+      role: "developer",
+      active: true,
+    });
+    toast("تم تسجيل دخول المطوّر الأساسي بنجاح");
+    return true;
+  }
+  const localUser = availableUsers().find((x) => x.username === username);
+  if (localUser) {
+    if (localUser.active === false || localUser.password !== password)
+      throw Error("اسم المستخدم أو كلمة المرور غير صحيحة.");
+    setSession(localUser);
+    toast("تم الدخول بالحساب المحلي");
+    return true;
+  }
+  try {
+    const user = await centralLogin(username, password);
+    if (!user || !user.username)
+      throw Error("استجابة الدخول من الخادم غير صالحة.");
+    appStorage.removeItem(DEVICE_BLOCKED_KEY);
+    setSession(user);
+    return true;
+  } catch (centralError) {
+    if (
+      locallyBlocked ||
+      centralError?.code === "DEVICE_BLOCKED" ||
+      centralError?.status === 403 ||
+      /محظور|blocked/i.test(String(centralError?.message || ""))
+    )
+      throw Error(
+        "لا يمكن تسجيل الدخول من هذا الجهاز لأنه محظور. يجب فتحه بواسطة المطوّر الأساسي أو من خلال خيار فتح الجهاز.",
+      );
+    if (!centralError?.networkError) throw centralError;
+    throw Error("اسم المستخدم أو كلمة المرور غير صحيحة.");
+  }
+}
+async function loginFromForm(event) {
+  event?.preventDefault?.();
+  const form = document.querySelector("#loginForm"),
+    username = document.querySelector("#loginUsername")?.value.trim() || "",
+    password = document.querySelector("#loginPassword")?.value || "",
+    errorBox = document.querySelector("#loginError"),
+    button = document.querySelector("#loginSubmit");
+  if (button) button.disabled = true;
+  if (errorBox) {
+    errorBox.textContent = "";
+    errorBox.classList.remove("show");
+  }
+  try {
+    if (!dataFolderReady)
+      throw Error("اختر مجلد قواعد البيانات أولًا قبل تسجيل الدخول.");
+    if (!usersFileReady)
+      throw Error(
+        "يجب أن يحتوي مجلد قاعدة البيانات على ملف users.json صالح قبل تسجيل الدخول.",
+      );
+    if (!username || !password) throw Error("أدخل اسم المستخدم وكلمة المرور.");
+    const ok = await login(username, password);
+    if (!ok) {
+      if (errorBox)
+        errorBox.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة";
+      return false;
+    }
+    form?.reset();
+    if (errorBox) errorBox.textContent = "";
+    toast(`تم تسجيل الدخول بنجاح: ${currentUser?.username || username}`);
+    return true;
+  } catch (error) {
+    if (errorBox) {
+      errorBox.textContent = error?.message || "تعذر تسجيل الدخول";
+      errorBox.classList.add("show");
+    }
+    if (typeof syncUnlockButton === "function") syncUnlockButton();
+    return false;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+window.loginFromForm = loginFromForm;
+function renderUserList() {
+  const box = $("#userList");
+  if (!box) return;
+  const canManage = currentUser?.username === DEVELOPER_USERNAME;
+  box.innerHTML = getUsers()
+    .map(
+      (u) =>
+        `<div class="user-row"><div><strong>${escapeHtml(u.username)}</strong><small>${u.role === "developer" ? "حساب مطوّر" : "حساب عادي"} · ${u.active === false ? "معطل" : "فعال"}</small></div>${canManage && u.username !== DEVELOPER_USERNAME ? `<div class="user-row-actions"><button type="button" class="btn ghost small" data-edit-user="${escapeHtml(u.username)}">تعديل</button><button type="button" class="btn secondary small" data-toggle-user="${escapeHtml(u.username)}">${u.active === false ? "تفعيل" : "تعطيل"}</button><button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">حذف</button></div>` : ""}</div>`,
+    )
+    .join("");
+  box
+    .querySelectorAll("[data-delete-user]")
+    .forEach((b) =>
+      b.addEventListener("click", () => deleteUser(b.dataset.deleteUser)),
+    );
+  box
+    .querySelectorAll("[data-edit-user]")
+    .forEach((b) =>
+      b.addEventListener("click", () => openEditUser(b.dataset.editUser)),
+    );
+  box
+    .querySelectorAll("[data-toggle-user]")
+    .forEach((b) =>
+      b.addEventListener("click", () => toggleUser(b.dataset.toggleUser)),
+    );
+  renderAdminLog();
+}
+async function deleteUser(username) {
+  if (!currentUser || currentUser.username !== DEVELOPER_USERNAME) {
+    toast("هذه الخاصية للمطوّر الأساسي فقط");
+    return;
+  }
+  if (username === DEVELOPER_USERNAME) {
+    toast("لا يمكن حذف حساب المطوّر الأساسي");
+    return;
+  }
+  const confirmed = await openConfirmModal(
+    `هل تريد حذف المستخدم ${username} نهائيًا؟`,
+  );
+  if (!confirmed) return;
+  saveUsers(getUsers().filter((u) => u.username !== username));
+  recordAdminLog("حذف مستخدم", username);
+  renderUserList();
+  toast("تم حذف المستخدم");
+}
+async function toggleUser(username) {
+  if (
+    !currentUser ||
+    currentUser.username !== DEVELOPER_USERNAME ||
+    username === DEVELOPER_USERNAME
+  ) {
+    toast("تغيير حالة هذا الحساب غير مسموح");
+    return;
+  }
+  const users = getUsers(),
+    user = users.find((u) => u.username === username);
+  if (!user) return;
+  const next = user.active === false;
+  const confirmed = await openConfirmModal(
+    `${next ? "تفعيل" : "تعطيل"} الحساب ${username}؟`,
+  );
+  if (!confirmed) return;
+  user.active = next;
+  saveUsers(users);
+  recordAdminLog(next ? "تفعيل مستخدم" : "تعطيل مستخدم", username);
+  renderUserList();
+  toast(next ? "تم تفعيل الحساب" : "تم تعطيل الحساب");
+}
+function openEditUser(username) {
+  if (!currentUser || currentUser.username !== DEVELOPER_USERNAME) {
+    toast("هذه الخاصية للمطوّر الأساسي فقط");
+    return;
+  }
+  const user = getUsers().find((u) => u.username === username);
+  if (!user || username === DEVELOPER_USERNAME) return;
+  $("#editingUsername").value = user.username;
+  $("#newUsername").value = user.username;
+  $("#newPassword").value = user.password;
+  $("#newUserRole").value = user.role;
+  $("#userSubmit").textContent = "حفظ التعديل";
+  $("#userManagerError").textContent = "";
+}
+async function openUserManager() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("هذه الخاصية للمطوّر فقط");
+    return;
+  }
+  const key = await securePassword(
+    "secondary",
+    "إدارة المستخدمين",
+    "أدخل كلمة مرور إدارة الحساب:",
+    LIMIT_PASSWORD,
+  );
+  if (key !== LIMIT_PASSWORD) return;
+  if (advanceLocked && !(await requestActivation())) return;
+  renderUserList();
+  $("#userManagerModal").classList.remove("hidden");
+  $("#newUsername").focus();
+}
+function closeUserManager() {
+  $("#userManagerModal")?.classList.add("hidden");
+  $("#userForm")?.reset();
+  $("#editingUsername").value = "";
+  $("#userSubmit").textContent = "إضافة المستخدم";
+  $("#userManagerError").textContent = "";
+}
+async function addUser(event) {
+  event.preventDefault();
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("هذه الخاصية للمطوّر فقط");
+    return;
+  }
+  const username = $("#newUsername").value.trim(),
+    password = $("#newPassword").value,
+    role = $("#newUserRole").value,
+    error = $("#userManagerError"),
+    editing = $("#editingUsername").value.trim();
+  if (!username || !password) {
+    error.textContent = "أدخل اسم المستخدم وكلمة المرور";
+    return;
+  }
+  const users = getUsers();
+  if (users.some((u) => u.username === username && u.username !== editing)) {
+    error.textContent = "اسم المستخدم موجود بالفعل";
+    return;
+  }
+  if (editing) {
+    const user = users.find((u) => u.username === editing);
+    if (!user) {
+      error.textContent = "المستخدم غير موجود";
+      return;
+    }
+    user.username = username;
+    user.password = password;
+    user.role = role === "developer" ? "developer" : "user";
+    recordAdminLog("تعديل مستخدم", username, `كان الاسم السابق: ${editing}`);
+    toast("تم تعديل بيانات المستخدم");
+  } else {
+    users.push({
+      username,
+      password,
+      role: role === "developer" ? "developer" : "user",
+      active: true,
+    });
+    recordAdminLog(
+      "إضافة مستخدم",
+      username,
+      role === "developer" ? "حساب مطوّر" : "حساب عادي",
+    );
+    toast("تمت إضافة المستخدم");
+  }
+  saveUsers(users);
+  if (currentUser?.username === DEVELOPER_USERNAME) {
+    try {
+      await centralRequest("/accounts/sync", {
+        method: "POST",
+        body: JSON.stringify({ username, password, role }),
+      });
+    } catch (e) {
+      toast("تم حفظ الحساب محليًا وسيتم رفعه عند توفر الاتصال");
+    }
+  }
+  downloadJson(
+    {
+      version: 1,
+      users: users
+        .filter((user) => user.username !== DEVELOPER_USERNAME)
+        .map(({ password, ...user }) => user),
+      logs: JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]"),
+      updatedAt: new Date().toISOString(),
+    },
+    "users.json",
+  );
+  error.textContent = "";
+  closeUserManager();
+  renderUserList();
+}
+async function importUsersFile(file) {
+  try {
+    const data = JSON.parse(await file.text()),
+      users = Array.isArray(data) ? data : data.users;
+    if (
+      !Array.isArray(users) ||
+      !users.length ||
+      users.some(
+        (u) =>
+          !u.username || !u.password || !["user", "developer"].includes(u.role),
+      )
+    )
+      throw Error();
+    if (!currentUser || currentUser.role !== "developer") {
+      toast("استيراد المستخدمين للمطوّر فقط");
+      return;
+    }
+    saveUsers(
+      users.some((u) => u.username === DEVELOPER_USERNAME)
+        ? users
+        : [...DEFAULT_USERS, ...users],
+    );
+    recordAdminLog("استيراد المستخدمين", "users.json");
+    renderUserList();
+    toast("تم استيراد قاعدة المستخدمين");
+  } catch (e) {
+    toast("ملف users.json غير صحيح");
+  }
+}
+const money = (n) =>
+  Number(n || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const normalize = (s) =>
+  String(s || "")
+    .trim()
+    .toLocaleLowerCase("ar-EG");
+function toast(msg) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove("show"), 2400);
+}
+function setDate() {
+  const d = new Date();
+  $("#invoiceDate").value =
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function escapeHtml(s) {
+  return String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[c],
+  );
+}
+async function loadBundledDatabase() {
+  if (appStorage.getItem(PRODKEY) || appStorage.getItem("bill:pwa:customers:v1")) return;
+  const files = {products: "Database/products.json", customers: "Database/customers.json", history: "Database/customer_history.json", users: "Database/users.json"};
+  try {
+    const read = async (url) => { const r = await fetch(url, {cache: "no-store"}); return r.ok ? await r.json() : null; };
+    const [productsData, customersData, historyData, usersData] = await Promise.all(Object.values(files).map(read));
+    if (Array.isArray(productsData) && productsData.length) appStorage.setItem(PRODKEY, JSON.stringify(productsData));
+    if (Array.isArray(customersData) && customersData.length) appStorage.setItem("bill:pwa:customers:v1", JSON.stringify(customersData));
+    if (Array.isArray(historyData) && historyData.length) appStorage.setItem("bill:pwa:customer-history:v1", JSON.stringify(historyData));
+    if (Array.isArray(usersData) && usersData.length) { usersFileUsers = usersData; usersFileReady = true; saveUsers(usersData); }
+  } catch (e) { console.warn("Bundled database unavailable", e); }
+}
+async function loadProducts() {
+  let local = [];
+  try {
+    const raw = appStorage.getItem(PRODKEY);
+    const data = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(data)) local = data;
+  } catch (e) {}
+  products = local
+    .filter((p) => p && p.code != null)
+    .map((p) => ({
+      ...p,
+      code: String(p.code),
+      searchText: `${normalize(p.name || p.code)} ${p.code}`,
+    }));
+  try {
+    if ("Worker" in window && products.length) {
+      searchWorker = new Worker("search-worker.js");
+      searchWorker.onmessage = (e) => {
+        if (
+          e.data?.type === "results" &&
+          normalize(e.data.query) === normalize(els.search.value)
+        )
+          renderFound(e.data.results);
+      };
+      setTimeout(() => {
+        try {
+          searchWorker?.postMessage({ type: "init", payload: products });
+        } catch (e) {}
+      }, 0);
+    }
+  } catch (e) {
+    searchWorker = null;
+  }
+  if (!products.length)
+    toast("لم يتم تحميل المنتجات؛ اختر مجلد قاعدة البيانات");
+  document.title = "Bill";
+}
+function normalizeCustomerCode(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/\.0+$/, "");
+}
+function normalizeCustomerRecord(item) {
+  if (!item || typeof item !== "object") return null;
+  const pick = (...keys) => {
+    const key = Object.keys(item).find((k) =>
+      keys.some(
+        (name) => String(k).toLowerCase() === String(name).toLowerCase(),
+      ),
+    );
+    return key === undefined ? "" : item[key];
+  };
+  const code = normalizeCustomerCode(
+    pick(
+      "code",
+      "customerCode",
+      "cus_code",
+      "cuscode",
+      "customer_code",
+      "كود",
+      "كود_العميل",
+    ),
+  );
+  const name = String(
+    pick(
+      "name",
+      "customerName",
+      "cus_name",
+      "cusname",
+      "customer_name",
+      "اسم",
+      "اسم_العميل",
+    ) || "",
+  ).trim();
+  if (!code || !name) return null;
+  return {
+    code,
+    name,
+    city: String(
+      pick(
+        "city",
+        "customerCity",
+        "cus_city",
+        "cuscity",
+        "customer_city",
+        "مدينة",
+        "المدينة",
+      ) || "",
+    ).trim(),
+    address: String(
+      pick(
+        "address",
+        "customerAddress",
+        "cus_address",
+        "cusaddress",
+        "customer_address",
+        "عنوان",
+        "العنوان",
+      ) || "",
+    ).trim(),
+    phone: String(
+      pick(
+        "phone",
+        "tel",
+        "tel_1",
+        "tel1",
+        "mobile",
+        "telephone",
+        "هاتف",
+        "التليفون",
+      ) || "",
+    ).trim(),
+  };
+}
+function normalizeCustomersData(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeCustomerRecord).filter(Boolean);
+}
+async function loadCustomers() {
+  try {
+    const raw = JSON.parse(appStorage.getItem("bill:pwa:customers:v1") || "[]");
+    const local = Array.isArray(raw)
+      ? raw
+      : raw?.customers || raw?.customer || raw?.data || raw?.rows || [];
+    customers = normalizeCustomersData(local);
+  } catch (e) {
+    customers = [];
+  }
+  try {
+    const localHistory = JSON.parse(
+      appStorage.getItem("bill:pwa:customer-history:v1") || "[]",
+    );
+    customerHistory = Array.isArray(localHistory) ? localHistory : [];
+  } catch (e) {
+    customerHistory = [];
+  }
+}
+function renderCustomer(code) {
+  const normalizedCode = normalizeCustomerCode(code),
+    c = customers.find((x) => normalizeCustomerCode(x.code) === normalizedCode),
+    info = $("#customerInfo"),
+    hist = $("#customerHistory");
+  if (!c) {
+    $("#customerName").value = "";
+    $("#customerCity").value = "";
+    $("#customerPhone").value = "";
+    info.classList.add("hidden");
+    hist.classList.add("hidden");
+    return;
+  }
+  $("#customerName").value = c.name || "";
+  $("#customerCity").value = c.city || "";
+  $("#customerPhone").value = c.phone || "";
+  info.classList.add("hidden");
+  const h = customerHistory.find(
+    (x) => normalizeCustomerCode(x.customerCode) === normalizedCode,
+  );
+  if (h && h.items.length) {
+    const collapsed = appStorage.getItem(HISTORY_KEY) === "1";
+    hist.classList.remove("hidden");
+    hist.innerHTML = `<div class="history-heading history-heading-row"><span>مشتريات سابقة · ${h.invoiceCount} فاتورة</span><button type="button" class="history-toggle">${collapsed ? "إظهار المشتريات السابقة" : "إخفاء المشتريات السابقة"}</button></div><div class="history-chips${collapsed ? " hidden" : ""}">${h.items
+      .slice(0, 60)
+      .map(
+        (x) =>
+          `<button class="history-chip" data-code="${escapeHtml(x.code)}"><span>${escapeHtml(x.name)}</span><small>${x.mode === "wholesale" ? "مستخدم 2" : "مستخدم 3"} · ${money(x.lastPrice)} · كمية ${x.lastQty || 0}</small></button>`,
+      )
+      .join("")}</div>`;
+    const toggle = hist.querySelector(".history-toggle"),
+      chips = hist.querySelector(".history-chips");
+    toggle.addEventListener("click", () => {
+      const next = !chips.classList.contains("hidden");
+      chips.classList.toggle("hidden", next);
+      appStorage.setItem(HISTORY_KEY, next ? "1" : "0");
+      toggle.textContent = next
+        ? "إظهار المشتريات السابقة"
+        : "إخفاء المشتريات السابقة";
+    });
+    hist.querySelectorAll(".history-chip").forEach((b) =>
+      b.addEventListener("click", () => {
+        const p = products.find(
+          (x) => String(x.code) === String(b.dataset.code),
+        );
+        if (p) choose(p);
+      }),
+    );
+  } else hist.classList.add("hidden");
+}
+function renderFound(found) {
+  activeSuggestion = -1;
+  if (!normalize(els.search.value)) {
+    els.suggestions.classList.remove("open");
+    els.suggestions.innerHTML = "";
+    return;
+  }
+  els.suggestions.innerHTML = found.length
+    ? found
+        .map(
+          (p, i) =>
+            `<div class="suggestion ${productAgeClass(p.code)}" data-index="${i}" role="option"><span class="suggestion-name">${escapeHtml(p.name)}</span><span class="suggestion-meta">${escapeHtml(p.code)} · ${money(priceMode === "wholesale" ? p.wholesale : p.retail)}</span></div>`,
+        )
+        .join("")
+    : '<div class="suggestion"><span class="suggestion-name">لا توجد نتائج</span></div>';
+  els.suggestions.classList.add("open");
+  els.suggestions.querySelectorAll(".suggestion[data-index]").forEach((x) =>
+    x.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      choose(found[Number(x.dataset.index)]);
+    }),
+  );
+}
+function findProducts(q) {
+  const query = normalize(q),
+    out = [];
+  if (!query) return out;
+  for (const p of products) {
+    if (p.searchText.includes(query)) {
+      out.push(p);
+      if (out.length >= 40) break;
+    }
+  }
+  return out;
+}
+function scheduleSuggestions() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const q = els.search.value;
+    if (!normalize(q)) {
+      renderFound([]);
+      return;
+    }
+    if (searchWorker)
+      searchWorker.postMessage({ type: "search", payload: { query: q } });
+    else renderFound(findProducts(q));
+  }, 20);
+}
+function productAgeClass(code) {
+  const value = String(code || "");
+  if (value.startsWith("24")) return "product-old";
+  if (value.startsWith("25")) return "product-recent";
+  if (value.startsWith("26")) return "product-current";
+  return "product-current";
+}
+function applyProductColor(product) {
+  const cls = product ? productAgeClass(product.code) : "";
+  [els.search, els.qty, els.selected].forEach((el) => {
+    if (!el) return;
+    el.classList.remove("product-current", "product-recent", "product-old");
+    if (cls) el.classList.add(cls);
+  });
+}
+function choose(p) {
+  selected = p;
+  els.search.value = p.name;
+  els.suggestions.classList.remove("open");
+  els.selected.classList.remove("empty");
+  applyProductColor(p);
+  updatePrice();
+  els.qty.focus();
+  els.qty.select();
+}
+function unitPriceFor(product, mode = priceMode) {
+  if (!product) return 0;
+  const preferred = Number(
+    mode === "wholesale" ? product.wholesale : product.retail,
+  );
+  if (Number.isFinite(preferred) && preferred > 0) return preferred;
+  const fallback = Number(
+    mode === "wholesale" ? product.retail : product.wholesale,
+  );
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+}
+function effectivePriceMode(product, mode = priceMode) {
+  if (!product) return mode;
+  const preferred = Number(
+    mode === "wholesale" ? product.wholesale : product.retail,
+  );
+  return Number.isFinite(preferred) && preferred > 0
+    ? mode
+    : mode === "wholesale"
+      ? "retail"
+      : "wholesale";
+}
+function effectivePriceLabel(product) {
+  return effectivePriceMode(product) === "wholesale" ? "مستخدم 2" : "مستخدم 3";
+}
+function selectedUnitPrice() {
+  return selected ? unitPriceFor(selected) : 0;
+}
+function updatePrice() {
+  els.price.textContent = selected ? money(selectedUnitPrice()) : "—";
+  if (selected) {
+    applyProductColor(selected);
+    els.selected.innerHTML = `<strong>${escapeHtml(selected.name)}</strong> <span>· الكود ${escapeHtml(selected.code)} · ${effectivePriceLabel(selected)} ${money(selectedUnitPrice())}</span>`;
+  } else applyProductColor(null);
+  document
+    .querySelectorAll(".price-btn")
+    .forEach((b) =>
+      b.classList.toggle("active", b.dataset.price === priceMode),
+    );
+  renderCart();
+}
+function add() {
+  if (!selected) {
+    toast("اكتب جزءًا من الاسم واختر منتجًا");
+    els.search.focus();
+    return;
+  }
+  const qty = Number(els.qty.value);
+  if (!qty || qty <= 0) {
+    toast("أدخل كمية صحيحة");
+    els.qty.focus();
+    return;
+  }
+  const existing = cart.find((x) => x.product.code === selected.code);
+  if (existing) existing.qty += qty;
+  else cart.push({ product: selected, qty });
+  renderCart();
+  els.search.value = "";
+  els.qty.value = "1";
+  selected = null;
+  els.selected.textContent = "لم يتم اختيار منتج";
+  els.selected.classList.add("empty");
+  els.price.textContent = "—";
+  els.search.focus();
+}
+function renderCart() {
+  if (!cart.length)
+    els.items.innerHTML =
+      '<tr><td colspan="7" class="empty-row">لم تتم إضافة منتجات بعد</td></tr>';
+  else
+    els.items.innerHTML = cart
+      .map((x, i) => {
+        const original = unitPriceFor(x.product),
+          unit = Number(x.customPrice ?? original),
+          total = unit * x.qty,
+          cls = productAgeClass(x.product.code);
+        return `<tr class="${cls}"><td>${i + 1}</td><td><strong>${escapeHtml(x.customName ?? x.product.name)}</strong></td><td><span class="product-code">${escapeHtml(x.product.code)}</span></td><td><span>${money(unit)}</span>${x.customPrice != null ? '<small class="custom-price-mark">معدل</small>' : ""}</td><td><input class="line-qty ${cls}" data-i="${i}" type="number" min=".01" step=".01" value="${x.qty}"></td><td><strong>${money(total)}</strong></td><td><div class="line-actions"><button class="price-edit product-info-btn" data-i="${i}" title="معلومات المنتج للمطور" aria-label="معلومات المنتج للمطور">?</button><button class="price-edit" data-i="${i}" title="تعديل اسم وسعر المنتج" aria-label="تعديل اسم وسعر المنتج">&#9881;</button><button class="delete-line" data-i="${i}">حذف</button></div></td></tr>`;
+      })
+      .join("");
+  els.items.querySelectorAll(".line-qty").forEach((i) =>
+    i.addEventListener("change", () => {
+      const q = Number(i.value);
+      if (q > 0) cart[Number(i.dataset.i)].qty = q;
+      renderCart();
+    }),
+  );
+  els.items.querySelectorAll(".delete-line").forEach((b) =>
+    b.addEventListener("click", () => {
+      cart.splice(Number(b.dataset.i), 1);
+      renderCart();
+    }),
+  );
+  els.items
+    .querySelectorAll(".price-edit:not(.product-info-btn)")
+    .forEach((b) =>
+      b.addEventListener("click", () => editAdvancedPrice(Number(b.dataset.i))),
+    );
+  els.items
+    .querySelectorAll(".product-info-btn")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        showCartProductDetails(Number(b.dataset.i)),
+      ),
+    );
+  const tq = cart.reduce((a, x) => a + x.qty, 0),
+    total = cart.reduce((a, x) => {
+      const original = unitPriceFor(x.product);
+      return a + Number(x.customPrice ?? original) * x.qty;
+    }, 0);
+  els.itemsCount.textContent = `${cart.length.toLocaleString("en-US")} أصناف`;
+  els.totalQty.textContent = tq.toLocaleString("en-US");
+  els.grand.textContent = money(invoiceTotals().total);
+  renderDiscountSummary();
+}
+function syncProgramLock() {
+  const lock = $("#programLock");
+  if (lock) lock.classList.toggle("hidden", !advanceLocked);
+}
+function updatePriceLimitLabel() {
+  const el = $("#priceLimitLabel");
+  if (el)
+    el.textContent = `نسبة التعديل الحالية: ±${Math.round(priceLimitRatio * 100)}%`;
+}
+function openSecureModal(title, message, options = {}) {
+  return new Promise((resolve) => {
+    const modal = $("#passwordModal"),
+      input = $("#modalInput");
+    $("#modalTitle").textContent = title;
+    $("#modalMessage").textContent = message;
+    $("#modalError").textContent = "";
+    input.type = options.type || "password";
+    input.value = options.value ?? "";
+    input.min = options.min ?? "";
+    input.max = options.max ?? "";
+    input.step = options.step ?? "";
+    modalResolve = resolve;
+    modal.classList.remove("hidden");
+    setTimeout(() => input.focus(), 30);
+  });
+}
+function closeSecureModal(value) {
+  const modal = $("#passwordModal");
+  modal.classList.add("hidden");
+  if (modalResolve) {
+    const resolve = modalResolve;
+    modalResolve = null;
+    resolve(value);
+  }
+}
+function openConfirmModal(message) {
+  return new Promise((resolve) => {
+    $("#confirmMessage").textContent = message;
+    confirmResolve = resolve;
+    $("#confirmModal").classList.remove("hidden");
+  });
+}
+function closeConfirmModal(value) {
+  $("#confirmModal").classList.add("hidden");
+  if (confirmResolve) {
+    const resolve = confirmResolve;
+    confirmResolve = null;
+    resolve(value);
+  }
+}
+function lockProgram() {
+  advanceLocked = true;
+  appStorage.setItem("bill:pwa:advance-locked", "1");
+  syncProgramLock();
+  toast("تم قفل خاصية التعديل المتقدم");
+}
+async function requestActivation() {
+  const key = await securePassword(
+    "activation",
+    "تفعيل البرنامج",
+    "تم تجاوز عدد المحاولات. أدخل كلمة مرور التفعيل لفتح البرنامج:",
+    ACTIVATION_PASSWORD,
+  );
+  if (key === ACTIVATION_PASSWORD) {
+    advanceLocked = false;
+    appStorage.removeItem("bill:pwa:advance-locked");
+    syncProgramLock();
+    toast("تم تفعيل البرنامج بنجاح");
+    return true;
+  }
+  return false;
+}
+async function editAdvancedPrice(index) {
+  if (!currentUser) return;
+  if (advanceLocked && !(await requestActivation())) return;
+  if (!advanceUnlocked) {
+    const key = await securePassword(
+      "primary",
+      "تعديل الاسم والسعر",
+      "أدخل كلمة مرور تعديل السعر:",
+      ADVANCE_PASSWORD,
+    );
+    if (key === ADVANCE_PASSWORD) advanceUnlocked = true;
+    else if (key === "__ESCALATE__") {
+      if (!(await requestActivation())) return;
+      advanceUnlocked = true;
+    } else return;
+  }
+  const item = cart[index];
+  if (!item) return;
+  const product = item.product;
+  const nameValue = await openSecureModal(
+    "اسم المنتج في هذه الفاتورة",
+    "أدخل الاسم الذي سيظهر في هذه الفاتورة فقط:",
+    { type: "text", value: String(item.customName ?? product.name ?? "") },
+  );
+  if (nameValue === null) return;
+  const newName = String(nameValue).trim();
+  if (!newName) {
+    toast("اسم المنتج غير صحيح؛ لم يتم التعديل");
+    return;
+  }
+  const original = unitPriceFor(product),
+    current = Number(item.customPrice ?? original);
+  const entered = await openSecureModal(
+    "السعر في هذه الفاتورة",
+    `السعر الأصلي ${money(original)}. النسبة المسموحة ±${Math.round(priceLimitRatio * 100)}%: أدخل السعر الجديد.`,
+    { type: "number", value: String(current), min: "0", step: "0.01" },
+  );
+  if (entered === null) return;
+  const value = Number(entered);
+  if (!Number.isFinite(value) || value <= 0) {
+    toast("السعر غير صحيح؛ لم يتم التعديل");
+    return;
+  }
+  const min = original * (1 - priceLimitRatio),
+    max = original * (1 + priceLimitRatio);
+  if (value < min || value > max) {
+    const key = await securePassword(
+      "secondary",
+      "السعر خارج الحدود",
+      "السعر خارج النطاق المسموح. أدخل كلمة المرور الإضافية:",
+      LIMIT_PASSWORD,
+    );
+    if (key === LIMIT_PASSWORD) {
+    } else if (key === "__ESCALATE__") {
+      if (!(await requestActivation())) return;
+    } else return;
+  }
+  item.customName = newName;
+  item.customPrice = Number(value.toFixed(2));
+  recordAdminLog(
+    "تعديل اسم وسعر داخل الفاتورة",
+    product.code,
+    `الاسم: ${newName}، السعر: ${money(value)}`,
+  );
+  renderCart();
+  toast("تم حفظ الاسم والسعر في هذه الفاتورة فقط");
+}
+async function openAdvancedSettings() {
+  if (!currentUser) return;
+  if (currentUser.username === DEVELOPER_USERNAME) {
+    advanceUnlocked = true;
+  } else {
+    if (advanceLocked && !(await requestActivation())) return;
+    const key = await securePassword(
+      "secondary",
+      "إعدادات نسبة الأسعار",
+      "أدخل كلمة مرور إعدادات نسبة الأسعار:",
+      LIMIT_PASSWORD,
+    );
+    if (key === LIMIT_PASSWORD) {
+    } else if (key === "__ESCALATE__") {
+      if (!(await requestActivation())) return;
+    } else return;
+  }
+  const entered = await openSecureModal(
+    "نسبة تعديل الأسعار",
+    `النسبة الحالية ±${Math.round(priceLimitRatio * 100)}%. أدخل النسبة الجديدة من 0 إلى 100:`,
+    {
+      type: "number",
+      value: String(Math.round(priceLimitRatio * 100)),
+      min: "0",
+      max: "100",
+      step: "1",
+    },
+  );
+  if (entered === null) return;
+  const value = Number(entered);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    toast("أدخل نسبة صحيحة بين 0 و100");
+    return;
+  }
+  const confirmed = await openConfirmModal(
+    `سيتم اعتماد نسبة ±${value}% لتعديل أسعار المستخدمين. هل تريد الحفظ؟`,
+  );
+  if (!confirmed) {
+    toast("تم إلغاء حفظ النسبة");
+    return;
+  }
+  priceLimitRatio = value / 100;
+  appStorage.setItem("bill:pwa:price-limit", String(value));
+  updatePriceLimitLabel();
+  toast(`تم حفظ نسبة التعديل الحالية: ±${value}%`);
+}
+async function stopScanner() {
+  const session = ++scannerSession;
+  if (scannerTimer) {
+    cancelAnimationFrame(scannerTimer);
+    scannerTimer = 0;
+  }
+  const controls = scannerControls;
+  scannerControls = null;
+  try {
+    controls?.stop?.();
+  } catch (e) {}
+  const stream = scannerStream;
+  scannerStream = null;
+  try {
+    stream?.getTracks?.().forEach((t) => {
+      try {
+        t.stop();
+      } catch (e) {}
+    });
+  } catch (e) {}
+  const video = $("#scannerVideo");
+  if (video) {
+    try {
+      video.pause();
+    } catch (e) {}
+    video.srcObject = null;
+  }
+  scannerTorchOn = false;
+  const modal = $("#scannerModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
+  const torchButton = $("#scannerTorch");
+  if (torchButton) {
+    torchButton.classList.add("hidden");
+    torchButton.onclick = null;
+  }
+  const zoomControl = $("#scannerZoom");
+  if (zoomControl) {
+    zoomControl.classList.add("hidden");
+    zoomControl.oninput = null;
+  }
+  return session;
+}
+async function decodeQrImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image(),
+      url = URL.createObjectURL(file);
+    image.onload = async () => {
+      try {
+        const canvas = document.createElement("canvas"),
+          scale = Math.min(
+            1,
+            1600 / Math.max(image.naturalWidth, image.naturalHeight),
+          );
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const result = window.jsQR?.(
+          ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+          canvas.width,
+          canvas.height,
+          { inversionAttempts: "attemptBoth" },
+        );
+        let raw = result?.data || null;
+        if (!raw && window.ZXingBrowser?.BrowserMultiFormatReader) {
+          try {
+            const reader = new ZXingBrowser.BrowserMultiFormatReader(),
+              decoded = await reader.decodeFromImageElement(image);
+            raw = decoded?.getText?.() || decoded?.text || null;
+          } catch (error) {}
+        }
+        URL.revokeObjectURL(url);
+        resolve(raw);
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        reject(error);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("تعذر قراءة الصورة"));
+    };
+    image.src = url;
+  });
+}
+async function processScannedValue(raw) {
+  raw = String(raw || "").trim();
+  if (!raw || scannerMode !== "product") return;
+  await stopScanner();
+  const found = products.find((p) => String(p.code) === raw);
+  if (found) { choose(found); toast(`تم العثور على المنتج: ${found.name}`); }
+  else { els.search.value = raw; scheduleSuggestions(); toast(`تمت قراءة الكود: ${raw}، لكن لم يتم العثور على منتج مطابق`); }
+  els.search.focus();
+}
+
+function setScannerZoom(track, control) {
+  if (!track?.applyConstraints || !control) return;
+  const value = Number(control.value);
+  if (!Number.isFinite(value)) return;
+  track.applyConstraints({ advanced: [{ zoom: value }] }).catch(() => {});
+}
+function toggleScannerTorch(track, button) {
+  if (!track?.applyConstraints) return;
+  scannerTorchOn = !scannerTorchOn;
+  track
+    .applyConstraints({ advanced: [{ torch: scannerTorchOn }] })
+    .then(() => {
+      if (button)
+        button.textContent = scannerTorchOn ? "إيقاف الكشاف" : "تشغيل الكشاف";
+    })
+    .catch(() => {
+      scannerTorchOn = false;
+      if (button) button.textContent = "الكشاف غير متاح";
+    });
+}
+function invoiceTotals() {
+  const subtotal = cart.reduce((a, x) => {
+    const unit = Number(x.customPrice ?? unitPriceFor(x.product));
+    return a + unit * Number(x.qty || 0);
+  }, 0);
+  const rate = Math.max(0, Math.min(100, Number($("#discountRate")?.value || 0) || 0));
+  const discount = rate > 1 ? subtotal * rate / 100 : 0;
+  return {subtotal, rate, discount, total: subtotal - discount};
+}
+function syncPaymentFields() {
+  const method = $("#paymentMethod")?.value || "cash";
+  const box = $("#paymentParties");
+  if (box) box.classList.toggle("hidden", method === "cash");
+}
+function renderDiscountSummary() {
+  const t = invoiceTotals(), box = $("#discountSummary");
+  if (!box) return;
+  box.classList.toggle("hidden", !(t.rate > 1));
+  if (t.rate > 1) box.innerHTML = `<span>قبل الخصم: <b>${money(t.subtotal)}</b></span><span>الخصم ${money(t.rate)}%: <b>${money(t.discount)}</b></span><span>بعد الخصم: <b>${money(t.total)}</b></span>`;
+}
+function invoiceData() {
+  return {
+    id: Date.now(),
+    number: String(Date.now()).slice(-6),
+    date: $("#invoiceDate").value,
+    time: formatInvoiceTime(),
+    customerCode: $("#customerCode").value,
+    customerName: $("#customerName").value,
+    city: $("#customerCity").value,
+    phone: $("#customerPhone").value,
+    seller: $("#seller").value,
+    section: $("#section").value,
+    packageType: $("#packageType").value,
+    packageCount: $("#packageCount").value,
+    discountRate: Number($("#discountRate")?.value || 0) || 0,
+    paymentMethod: $("#paymentMethod")?.value || "cash",
+    paymentSender: $("#paymentSender")?.value || "",
+    paymentReceiver: $("#paymentReceiver")?.value || "",
+    notes: $("#invoiceNotes").value,
+    priceMode,
+    cart,
+  };
+}
+function save() {
+  if (!cart.length) {
+    toast("أضف منتجًا واحدًا على الأقل");
+    return;
+  }
+  const all = JSON.parse(appStorage.getItem(KEY) || "[]");
+  all.unshift(invoiceData());
+  appStorage.setItem(KEY, JSON.stringify(all.slice(0, 500)));
+  renderSaved();
+  toast("تم حفظ الفاتورة محليًا");
+}
+function customerDisplayName(code, fallback = "") {
+  const key = String(code || "").trim();
+  const matches = customers.filter(
+    (c) => normalize(c.name || "") === normalize(fallback || c.name || ""),
+  );
+  const found = customers.find((c) => key && String(c.code) === key);
+  const base = found?.name || fallback || "عميل نقدي";
+  const same = customers.filter(
+    (c) => normalize(c.name || "") === normalize(base),
+  );
+  if (same.length <= 1) return base;
+  const pos = Math.max(
+    0,
+    same.findIndex((c) => String(c.code) === String(found?.code || key)),
+  );
+  return `${base} ${pos + 1}`;
+}
+function renderSaved() {
+  const all = JSON.parse(appStorage.getItem(KEY) || "[]");
+  $("#savedCount").textContent = all.length.toLocaleString("en-US");
+  $("#savedInvoices").innerHTML = all.length
+    ? all
+        .slice(0, 20)
+        .map((x) => {
+          const rawName = String(x.customerName || "").trim();
+          const displayName = customerDisplayName(x.customerCode, x.customerName);
+          const hasName = rawName !== "";
+
+          // العنوان الرئيسي: اسم العميل لو موجود، وإلا رقم الفاتورة
+          const mainTitle = hasName ? displayName : String(x.number);
+
+          // السطر الفرعي: الرقم + التاريخ لو في اسم، وإلا التاريخ فقط
+          const subtitle = hasName
+            ? `فاتورة رقم ${escapeHtml(String(x.number))} · ${escapeHtml(x.date || "")}`
+            : escapeHtml(x.date || "");
+
+          return `<div class="saved-item"><label class="invoice-check"><input type="checkbox" data-select-invoice="${x.id}"><span></span></label><div class="saved-details"><strong>${escapeHtml(mainTitle)}</strong><small> · ${subtitle}</small></div><div class="saved-actions"><button data-print="${x.id}">طباعة</button><button data-load="${x.id}">فتح</button></div></div>`;
+        })
+        .join("")
+    : '<div class="empty-row">لا توجد فواتير محفوظة</div>';
+  document
+    .querySelectorAll("[data-load]")
+    .forEach((b) =>
+      b.addEventListener("click", () => loadInvoice(Number(b.dataset.load))),
+    );
+  document.querySelectorAll("[data-print]").forEach((b) =>
+    b.addEventListener("click", () => {
+      loadInvoice(Number(b.dataset.print));
+      setTimeout(printInvoice, 80);
+    }),
+  );
+  document
+    .querySelectorAll("[data-select-invoice]")
+    .forEach((b) => b.addEventListener("change", updateSelectAllState));
+  updateSelectAllState();
+}
+function selectedInvoiceIds() {
+  return [...document.querySelectorAll("[data-select-invoice]:checked")].map(
+    (x) => Number(x.dataset.selectInvoice),
+  );
+}
+function updateSelectAllState() {
+  const boxes = [...document.querySelectorAll("[data-select-invoice]")],
+    master = $("#selectAllInvoices");
+  if (!master) return;
+  master.checked = boxes.length > 0 && boxes.every((x) => x.checked);
+  master.indeterminate = boxes.some((x) => x.checked) && !master.checked;
+}
+function downloadJson(data, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(
+    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+  );
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+function exportSelectedInvoices() {
+  const ids = selectedInvoiceIds();
+  if (!ids.length) {
+    toast("حدد فاتورة واحدة على الأقل للتصدير");
+    return;
+  }
+  const invoices = JSON.parse(appStorage.getItem(KEY) || "[]").filter((x) =>
+    ids.includes(Number(x.id)),
+  );
+  downloadJson(
+    { version: 2, invoices, createdAt: new Date().toISOString() },
+    `invoices-selected-${new Date().toISOString().slice(0, 10)}.json`,
+  );
+  toast(`تم تصدير ${invoices.length.toLocaleString("en-US")} فاتورة`);
+}
+function deleteSelectedInvoices() {
+  const ids = selectedInvoiceIds();
+  if (!ids.length) {
+    toast("حدد فاتورة واحدة على الأقل للحذف");
+    return;
+  }
+  if (
+    !confirm(`هل تريد حذف ${ids.length.toLocaleString("en-US")} فاتورة محددة؟`)
+  )
+    return;
+  const all = JSON.parse(appStorage.getItem(KEY) || "[]").filter(
+    (x) => !ids.includes(Number(x.id)),
+  );
+  appStorage.setItem(KEY, JSON.stringify(all));
+  renderSaved();
+  toast("تم حذف الفواتير المحددة");
+}
+function loadInvoice(id) {
+  const x = JSON.parse(appStorage.getItem(KEY) || "[]").find(
+    (i) => i.id === id,
+  );
+  if (!x) return;
+  const currentMode = priceMode;
+  Object.entries({
+    customerCode: x.customerCode,
+    customerName: x.customerName,
+    customerCity: x.city,
+    customerPhone: x.phone,
+    seller: x.seller,
+    section: x.section,
+    packageType: x.packageType,
+    packageCount: x.packageCount,
+    discountRate: x.discountRate || 0,
+    paymentMethod: x.paymentMethod || "cash",
+    paymentSender: x.paymentSender || "",
+    paymentReceiver: x.paymentReceiver || "",
+    invoiceDate: x.date,
+    invoiceNotes: x.notes,
+  }).forEach(([k, v]) => {
+    if ($("#" + k)) $("#" + k).value = v || "";
+  });
+  priceMode = currentMode;
+  cart = (x.cart || []).map((row) => {
+    const code = String(row?.product?.code ?? row?.code ?? "");
+    const current = products.find((p) => String(p.code) === code);
+    return { ...row, product: current || row.product, customPrice: undefined };
+  });
+  selected = null;
+  renderCart();
+  updatePrice();
+  toast(
+    `تم فتح الفاتورة بأسعار ${priceMode === "wholesale" ? "مستخدم 2" : "مستخدم 3"} للمستخدم الحالي`,
+  );
+}
+function newInvoice() {
+  cart = [];
+  selected = null;
+  priceMode = "wholesale";
+  advanceUnlocked = false;
+  [
+    "customerCode",
+    "customerName",
+    "customerCity",
+    "customerPhone",
+    "seller",
+  ].forEach((id) => ($("#" + id).value = ""));
+  $("#invoiceNotes").value = "";
+  $("#packageCount").value = "1";
+  $("#discountRate").value = "0";
+  $("#paymentMethod").value = "cash";
+  $("#paymentSender").value = ""; $("#paymentReceiver").value = "";
+  syncPaymentFields();
+  $("#packageType").value = "";
+  $("#section").value = "بيتي";
+  setDate();
+  els.search.value = "";
+  els.qty.value = "1";
+  els.selected.textContent = "لم يتم اختيار منتج";
+  els.selected.classList.add("empty");
+  updatePrice();
+  els.search.focus();
+}
+function exportDatabasePackage() {
+  const data = {version: 3, format: "bill-database-package", products, customers, users: getUsers(), customerHistory, invoices: safeJson(appStorage.getItem(KEY) || "[]", []), exportedAt: new Date().toISOString()};
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `database-export-${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 500);
+  toast("تم تصدير ملف شامل للعملاء والمستخدمين والمنتجات وسجل المشتريات");
+}
+function exportData() {
+  const data = {
+    version: 2,
+    products,
+    invoices: JSON.parse(appStorage.getItem(KEY) || "[]"),
+    customers,
+    customerHistory,
+    users: getUsers(),
+    adminLog: JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]"),
+    createdAt: new Date().toISOString(),
+  };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(
+    new Blob([JSON.stringify(data)], { type: "application/json" }),
+  );
+  a.download = `bill-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+async function importBackup(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.invoices)) throw Error();
+    appStorage.setItem(KEY, JSON.stringify(data.invoices));
+    if (Array.isArray(data.products) && data.products.length) {
+      appStorage.setItem(PRODKEY, JSON.stringify(data.products));
+      products = data.products.map((p) => ({
+        ...p,
+        code: String(p.code),
+        searchText: `${normalize(p.name)} ${p.code}`,
+      }));
+      if (searchWorker)
+        searchWorker.postMessage({ type: "init", payload: products });
+    }
+    if (Array.isArray(data.users) && data.users.length) {
+      saveUsers(data.users);
+    }
+    if (Array.isArray(data.adminLog)) {
+      appStorage.setItem(ADMIN_LOG_KEY, JSON.stringify(data.adminLog));
+    }
+    renderSaved();
+    renderUserList();
+    toast(`تم استرداد ${data.invoices.length.toLocaleString("en-US")} فاتورة`);
+  } catch (e) {
+    toast("ملف النسخة الاحتياطية غير صحيح");
+  }
+}
+function renderPrintSheet() {
+  const d = invoiceData(),
+    total = invoiceTotals().total,
+    subtotal = invoiceTotals().subtotal,
+    discount = invoiceTotals().discount,
+    discountRate = invoiceTotals().rate,
+    qty = cart.reduce((a, x) => a + x.qty, 0),
+    rowsPerPage = 35,
+    pages = [];
+  for (let i = 0; i < cart.length; i += rowsPerPage)
+    pages.push(cart.slice(i, i + rowsPerPage));
+  const pageRows = (rows) =>
+    rows
+      .map((x) => {
+        const original = unitPriceFor(x.product),
+          unit = Number(x.customPrice ?? original);
+        return `<tr><td>${escapeHtml(x.product.code)}</td><td>${escapeHtml(x.customName ?? x.product.name)}</td><td>${x.qty}</td><td>${money(unit)}</td><td>${money(unit * x.qty)}</td></tr>`;
+      })
+      .join("");
+  const pageTemplate = (
+    rows,
+    index,
+    last,
+  ) => `<section class="print-page${last ? " print-page-last" : ""}"><div class="print-head">
+<!--<img class="print-logo" src="${escapeHtml(document.querySelector(".brand-logo")?.getAttribute("src") || "")}" alt="Bill">-->
+<div><h1>فاتورة مبيعات مؤقتة رقم : ${escapeHtml(d.number)}</h1></div><div>${escapeHtml(String(d.date || "").replace(/-/g, "/"))}<br>الوقت : ${escapeHtml(d.time)}</div></div><div class="print-customer">
+  <span class="customer-client"><b>العميل:</b> <span class="customer-code">${escapeHtml(d.customerCode || "—")}</span></span>
+  <span class="customer-name">${escapeHtml(d.customerName || "")}</span>
+  <span class="customer-city">البلد: ${escapeHtml(d.city || "—")}</span>
+</div><div class="print-meta"><div class="print-meta-row"><span>التاريخ: ${escapeHtml(String(d.date || "").replace(/-/g, "/"))}</span><span>الوقت: ${escapeHtml(d.time)}</span></div><div class="print-meta-row"><span>البائع: ${escapeHtml(d.seller || "—")}</span><span>القسم: ${escapeHtml(d.section || "—")}</span><span>النظام: ${effectivePriceLabel(rows[0]?.product)}</span><span>طريقة الدفع: ${escapeHtml(d.paymentMethod === "cash" ? "كاش" : d.paymentMethod === "wallet" ? "محفظة" : "طريقة أخرى")}</span><span>الهاتف: ${escapeHtml(d.phone || "—")}</span><span>نوع التعبئة: ${escapeHtml(d.packageType || "بدون")}</span><span class="package-count">العدد: ${escapeHtml(d.packageCount || "0")}</span></div></div><table class="print-table"><thead><tr><th>كود الصنف</th><th>الصنف</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>${pageRows(rows)}</tbody>${last ? `<tfoot><tr><th colspan="2">الجملة قبل الخصم</th><th class="qty-cell">${qty}</th><th colspan="2">${money(subtotal)}</th></tr>${discountRate > 1 ? `<tr><th colspan="4">الخصم (${money(discountRate)}%)</th><th>${money(discount)}</th></tr><tr><th colspan="4">السعر بعد الخصم / إجمالي الفاتورة</th><th>${money(total)}</th></tr>` : ""}</tfoot>` : ""}</table>${last && d.paymentMethod !== "cash" ? `<div class="print-payment"><span>المرسل (العميل): ${escapeHtml(d.paymentSender || "—")}</span><span>المستلم (المحل): ${escapeHtml(d.paymentReceiver || "—")}</span></div>` : ""}${last ? `<div class="print-bottom"><div class="print-summary-line"><span class="print-total">قيمة الفاتورة: <strong>${money(total)}</strong></span><span class="print-notes"><b>ملاحظات</b> ${escapeHtml(d.notes || "")}</span></div><div class="print-terms"><div>لا يوجد استبدال أو مرتجع للمستورد نهائيا أما المصرى يقبل الاستبدال أو المرتجعة إذا كان به عيب فقط و ذلك خلال 15 يوم و باصل الفاتورة</div><div>طهطا ش بورسعيد خلف المركز - ت: 01158760078 &amp; 01270801908 &nbsp;&nbsp;&nbsp;&nbsp; *** &nbsp;&nbsp;&nbsp;&nbsp; مواعيد العمل: صيفا من 9ص حتى 8:30م &amp; شتاءً من 9ص حتى 7:30 م</div><div>الإجازة الأسبوعية يوم الجمعة - ابتدأ من عيد الفطر المبارك القادم</div></div></div>` : ""}</section>`;
+  $("#printSheet").innerHTML = pages
+    .map((rows, index) => pageTemplate(rows, index, index === pages.length - 1))
+    .join("");
+}
+async function printInvoice() {
+  if (!cart.length) {
+    toast("أضف منتجًا قبل الطباعة");
+    return;
+  }
+  renderPrintSheet();
+  const logo = document.querySelector("#printSheet .print-logo");
+  if (logo && (!logo.complete || !logo.naturalWidth)) {
+    await new Promise((resolve) => {
+      const done = () => {
+        logo.removeEventListener("load", done);
+        logo.removeEventListener("error", done);
+        resolve();
+      };
+      logo.addEventListener("load", done, { once: true });
+      logo.addEventListener("error", done, { once: true });
+      setTimeout(done, 1200);
+    });
+  }
+  const oldTitle = document.title;
+  document.title = ($("#customerName").value || "").trim() || "no name";
+  window.print();
+  setTimeout(() => {
+    document.title = oldTitle;
+  }, 1500);
+}
+els.search.addEventListener("input", scheduleSuggestions);
+els.search.addEventListener("keydown", (e) => {
+  const list = [...els.suggestions.querySelectorAll(".suggestion[data-index]")];
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    activeSuggestion = Math.min(activeSuggestion + 1, list.length - 1);
+    list.forEach((x, i) =>
+      x.classList.toggle("active", i === activeSuggestion),
+    );
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    activeSuggestion = Math.max(activeSuggestion - 1, 0);
+    list.forEach((x, i) =>
+      x.classList.toggle("active", i === activeSuggestion),
+    );
+  } else if (e.key === "Enter" && activeSuggestion >= 0) {
+    e.preventDefault();
+    list[activeSuggestion]?.dispatchEvent(new MouseEvent("mousedown"));
+  } else if (e.key === "Escape") els.suggestions.classList.remove("open");
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".product-search"))
+    els.suggestions.classList.remove("open");
+});
+document.querySelectorAll(".price-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    if (cart.length) {
+      toast("لا يمكن تغيير النظام بعد إضافة المنتجات");
+      return;
+    }
+    priceMode = b.dataset.price;
+    updatePrice();
+  }),
+);
+$("#discountRate").addEventListener("input", renderCart);
+$("#paymentMethod").addEventListener("change", syncPaymentFields);
+syncPaymentFields();
+$("#addProduct").addEventListener("click", add);
+els.qty.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") add();
+});
+$("#saveInvoice").addEventListener("click", save);
+$("#printInvoice").addEventListener("click", printInvoice);
+$("#newInvoice").addEventListener("click", newInvoice);
+$("#exportData").addEventListener("click", exportData);
+$("#exportSelected").addEventListener("click", exportSelectedInvoices);
+$("#deleteSelected").addEventListener("click", deleteSelectedInvoices);
+$("#selectAllInvoices").addEventListener("change", (e) => {
+  document.querySelectorAll("[data-select-invoice]").forEach((x) => {
+    x.checked = e.target.checked;
+  });
+  updateSelectAllState();
+});
+$("#importBackup").addEventListener("change", (e) => {
+  if (e.target.files[0]) importBackup(e.target.files[0]);
+  e.target.value = "";
+});
+$("#customerCode").addEventListener("input", (e) =>
+  renderCustomer(e.target.value),
+);
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    e.preventDefault();
+    printInvoice();
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    save();
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    newInvoice();
+  }
+  if (
+    e.key === "Delete" &&
+    document.activeElement.classList.contains("line-qty")
+  ) {
+    const i = Number(document.activeElement.dataset.i);
+    cart.splice(i, 1);
+    renderCart();
+  }
+});
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  $("#installBtn").classList.remove("hidden");
+});
+$("#installBtn").addEventListener("click", async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt = null;
+  }
+});
+function showUpdateButton() {
+  const button = $("#updateBtn");
+  if (button && pendingRegistration?.waiting) button.classList.remove("hidden");
+}
+function watchForUpdates(registration) {
+  pendingRegistration = registration;
+  const showIfWaiting = () => {
+    if (registration.waiting) showUpdateButton();
+  };
+  registration.addEventListener("updatefound", () => {
+    const worker = registration.installing;
+    if (!worker) return;
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "installed") showIfWaiting();
+    });
+  });
+  showIfWaiting();
+  registration.update().catch(() => {});
+  setInterval(() => registration.update().catch(() => {}), 10 * 60 * 1000);
+}
+$("#updateBtn").addEventListener("click", () => {
+  const waiting = pendingRegistration?.waiting;
+  if (!waiting) {
+    location.reload();
+    return;
+  }
+  $("#updateBtn").textContent = "جاري التحديث...";
+  $("#updateBtn").disabled = true;
+  let reloaded = false;
+  const reload = () => {
+    if (reloaded) return;
+    reloaded = true;
+    location.reload();
+  };
+  navigator.serviceWorker.addEventListener("controllerchange", reload, {
+    once: true,
+  });
+  waiting.postMessage({ type: "SKIP_WAITING" });
+  setTimeout(reload, 5000);
+});
+window.addEventListener("load", () =>
+  setTimeout(() => $("#startupSplash")?.classList.add("is-hidden"), 650),
+);
+$("#unlockProgram").addEventListener("click", requestActivation);
+$("#passwordForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("#modalInput");
+  if (input.value.trim()) closeSecureModal(input.value.trim());
+  else $("#modalError").textContent = "أدخل قيمة صحيحة";
+});
+$("#modalCancel").addEventListener("click", () => closeSecureModal(null));
+$("#passwordModal").addEventListener("click", (e) => {
+  if (e.target.id === "passwordModal") closeSecureModal(null);
+});
+$("#confirmOk").addEventListener("click", () => closeConfirmModal(true));
+$("#confirmCancel").addEventListener("click", () => closeConfirmModal(false));
+$("#confirmModal").addEventListener("click", (e) => {
+  if (e.target.id === "confirmModal") closeConfirmModal(false);
+});
+$("#accountMenuButton").addEventListener("click", openAccountMenu);
+$("#accountMenuClose").addEventListener("click", closeAccountMenu);
+$("#accountMenuModal").addEventListener("click", (e) => {
+  if (e.target.id === "accountMenuModal") closeAccountMenu();
+});
+$("#accountManageUsers").addEventListener("click", () => {
+  closeAccountMenu();
+  openUserManager();
+});
+$("#accountManageDevices").addEventListener("click", openDevicesManager);
+$("#accountLoginAttempts").addEventListener("click", openLoginAttempts);
+$("#closeLoginAttempts").addEventListener("click", closeLoginAttempts);
+$("#loginAttemptsModal").addEventListener("click", (e) => {
+  if (e.target.id === "loginAttemptsModal") closeLoginAttempts();
+});
+$("#deviceUnlockButton").addEventListener("click", unlockDeviceWithZaxcel);
+$("#closeDevices").addEventListener("click", closeDevicesManager);
+$("#devicesModal").addEventListener("click", (e) => {
+  if (e.target.id === "devicesModal") closeDevicesManager();
+});
+$("#exportDatabasePackage").addEventListener("click", exportDatabasePackage);
+$("#accountPriceSettings").addEventListener("click", () => {
+  closeAccountMenu();
+  openAdvancedSettings();
+});
+$("#accountLogout").addEventListener("click", logoutUser);
+$("#closeUserManager").addEventListener("click", closeUserManager);
+$("#userForm").addEventListener("submit", addUser);
+$("#exportUsers").addEventListener("click", () => {
+  if (currentUser?.role !== "developer") {
+    toast("هذه الخاصية للمطوّر فقط");
+    return;
+  }
+  downloadJson(
+    {
+      version: 1,
+      users: getUsers()
+        .filter((user) => user.username !== DEVELOPER_USERNAME)
+        .map(({ password, ...user }) => user),
+      updatedAt: new Date().toISOString(),
+    },
+    "users.json",
+  );
+  toast("تم تنزيل users.json");
+});
+$("#importUsers").addEventListener("change", (e) => {
+  if (e.target.files[0]) importUsersFile(e.target.files[0]);
+  e.target.value = "";
+});
+$("#closeProductDetails").addEventListener("click", closeProductDetails);
+$("#productDetailsModal").addEventListener("click", (e) => {
+  if (e.target.id === "productDetailsModal") closeProductDetails();
+});
+$("#scannerClose").addEventListener("click", stopScanner);
+$("#scanFromImage").addEventListener("click", () => $("#scannerFile").click());
+$("#scannerFile").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const raw = await decodeQrImage(file);
+    if (!raw) throw new Error("لم يتم العثور على باركود واضح في الصورة");
+    await processScannedValue(raw);
+  } catch (error) {
+    $("#scannerMessage").textContent =
+      error.message || "تعذر قراءة الباركود من الصورة";
+  }
+});
+$("#scannerModal").addEventListener("click", (e) => {
+  if (e.target.id === "scannerModal") stopScanner();
+});
+$("#scanProductButton").addEventListener("click", () => openScanner("product"));
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await loginFromForm(e);
+});
+$("#chooseDataSource").addEventListener("click", () => $("#dataSourceInput")?.click());
+$("#dataSourceInput").addEventListener("change", async (e) => {
+  const files = e.target.files;
+  if (files?.length) await loadSelectedDataFolder(files);
+  e.target.value = "";
+});
+async function showCartProductDetails(index) {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("معلومات المنتج للمطوّر فقط");
+    return;
+  }
+  if (advanceLocked && !(await requestActivation())) return;
+  const key = await securePassword(
+    "primary",
+    "معلومات المنتج",
+    "أدخل كلمة مرور المطور:",
+    ADVANCE_PASSWORD,
+  );
+  if (key === ADVANCE_PASSWORD) {
+  } else if (key === "__ESCALATE__") {
+    if (!(await requestActivation())) return;
+  } else return;
+  const item = cart[index];
+  const p = item?.product;
+  if (!p) return;
+  const box = $("#productDetailsBody");
+  if (!box) return;
+  const detailRow = (label, value, dir = "auto") =>
+    `<div class="product-detail-row"><strong>${label} :</strong><span dir="${dir}">${escapeHtml(value ?? "غير موجود")}</span></div>`;
+  box.innerHTML = [
+    detailRow("كود المنتج", p.code, "ltr"),
+    detailRow("اسم المنتج", p.name || "", "rtl"),
+    detailRow("الحد الأدنى لإعادة الطلب", p.Min_Reorder, "ltr"),
+    detailRow("الخصم", p.I_Disc, "ltr"),
+    detailRow("سعر الوسيط", p.I_S_Price_N, "ltr"),
+    detailRow("سعر الشراء", p.I_P_Price, "ltr"),
+    detailRow("سعر مستخدم 2", p.wholesale, "ltr"),
+    detailRow("سعر مستخدم 3", p.retail, "ltr"),
+  ].join("");
+  $("#productDetailsModal").classList.remove("hidden");
+}
+function closeProductDetails() {
+  $("#productDetailsModal")?.classList.add("hidden");
+}
+function saveProducts() {
+  products = products.map((p) => {
+    const item = {
+      code: String(p.code).trim(),
+      name: String(p.name || "").trim(),
+      wholesale: Number(p.wholesale),
+      retail: Number(p.retail),
+      Min_Reorder: Number(p.Min_Reorder || 0),
+      I_Disc: Number(p.I_Disc || 0),
+      I_S_Price_N: Number(p.I_S_Price_N ?? 0),
+      I_P_Price: Number(p.I_P_Price ?? 0),
+    };
+    return { ...item, searchText: `${normalize(item.name)} ${item.code}` };
+  });
+  appStorage.setItem(PRODKEY, JSON.stringify(products));
+  if (searchWorker) {
+    try {
+      searchWorker.postMessage({ type: "init", payload: products });
+    } catch (e) {}
+  }
+}
+function renderProductManager() {
+  const box = $("#productManagerList");
+  if (!box) return;
+  const query = normalize($("#productManagerSearch")?.value || "");
+  const rows = products.filter((p) => !query || p.searchText.includes(query)).slice(0, 300);
+  box.innerHTML = rows.length
+    ? rows
+        .map(
+          (p) =>
+            `<div class="product-admin-row"><div><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.code)} · جملة ${money(p.wholesale)} · تجزئة ${money(p.retail)}</small></div><div class="user-row-actions"><button type="button" class="btn ghost small" data-product-edit="${escapeHtml(p.code)}">تعديل</button><button type="button" class="btn danger small" data-product-delete="${escapeHtml(p.code)}">حذف</button></div></div>`,
+        )
+        .join("")
+    : '<div class="empty-row">لا توجد منتجات مطابقة</div>';
+  box
+    .querySelectorAll("[data-product-edit]")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        editManagedProduct(b.dataset.productEdit),
+      ),
+    );
+  box
+    .querySelectorAll("[data-product-delete]")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        deleteManagedProduct(b.dataset.productDelete),
+      ),
+    );
+  const logBox = $("#productManagerLog");
+  if (logBox) {
+    const logs = JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]")
+      .filter((x) =>
+        /منتج|products\.json|إدارة المنتجات/.test(`${x.action} ${x.target}`),
+      )
+      .slice(0, 30);
+    logBox.innerHTML = logs.length
+      ? logs
+          .map(
+            (x) =>
+              `<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target || "—")}</span><small>${escapeHtml(x.actor || "—")} · ${escapeHtml(new Date(x.time).toLocaleString("ar-EG"))}</small></div>`,
+          )
+          .join("")
+      : '<div class="empty-row">لا توجد عمليات مسجلة</div>';
+  }
+}
+function resetProductForm() {
+  [
+    "productEditingCode",
+    "productCode",
+    "productName",
+    "productWholesale",
+    "productRetail",
+  ].forEach((id) => {
+    const el = $("#" + id);
+    if (el) el.value = "";
+  });
+  $("#productSubmit") && ($("#productSubmit").textContent = "إضافة المنتج");
+}
+function openProductManager() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("إدارة المنتجات للمطوّر فقط");
+    return;
+  }
+  securePassword(
+    "secondary",
+    "إدارة المنتجات",
+    "أدخل كلمة مرور إدارة الحساب:",
+    LIMIT_PASSWORD,
+  ).then((key) => {
+    if (key !== LIMIT_PASSWORD) return;
+    recordAdminLog("مشاهدة إدارة المنتجات", "products.json");
+    renderProductManager();
+    $("#productManagerModal").classList.remove("hidden");
+    resetProductForm();
+  });
+}
+function closeProductManager() {
+  $("#productManagerModal")?.classList.add("hidden");
+}
+function editManagedProduct(code) {
+  const p = products.find((x) => String(x.code) === String(code));
+  if (!p) return;
+  $("#productEditingCode").value = p.code;
+  $("#productCode").value = p.code;
+  $("#productName").value = p.name;
+  $("#productWholesale").value = p.wholesale;
+  $("#productRetail").value = p.retail;
+  $("#productSubmit").textContent = "حفظ التعديل";
+  $("#productName").focus();
+}
+function submitManagedProduct(e) {
+  e.preventDefault();
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("إدارة المنتجات للمطوّر فقط");
+    return;
+  }
+  const editing = $("#productEditingCode").value.trim(),
+    code = $("#productCode").value.trim(),
+    name = $("#productName").value.trim(),
+    wholesale = Number($("#productWholesale").value),
+    retail = Number($("#productRetail").value);
+  if (
+    !code ||
+    !name ||
+    ((!Number.isFinite(wholesale) || wholesale <= 0) &&
+      (!Number.isFinite(retail) || retail <= 0))
+  ) {
+    $("#productManagerError").textContent =
+      "أدخل الكود والاسم والأسعار بشكل صحيح";
+    return;
+  }
+  if (!editing && products.some((p) => p.code === code)) {
+    $("#productManagerError").textContent = "كود المنتج موجود بالفعل";
+    return;
+  }
+  if (editing && code !== editing && products.some((p) => p.code === code)) {
+    $("#productManagerError").textContent = "الكود الجديد مستخدم بالفعل";
+    return;
+  }
+  const p = editing ? products.find((x) => x.code === editing) : null;
+  if (p) {
+    p.code = code;
+    p.name = name;
+    p.wholesale = wholesale;
+    p.retail = retail;
+    recordAdminLog("تعديل منتج", code, `الاسم: ${name}`);
+    toast("تم تعديل المنتج");
+  } else {
+    products.push({ code, name, wholesale, retail });
+    recordAdminLog("إضافة منتج", code, `الاسم: ${name}`);
+    toast("تمت إضافة المنتج");
+  }
+  saveProducts();
+  resetProductForm();
+  $("#productManagerError").textContent = "";
+  renderProductManager();
+}
+async function deleteManagedProduct(code) {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("حذف المنتجات للمطوّر فقط");
+    return;
+  }
+  const p = products.find((x) => x.code === code);
+  if (!p) return;
+  if (!(await openConfirmModal(`هل تريد حذف المنتج «${p.name}»؟`))) return;
+  products = products.filter((x) => x.code !== code);
+  saveProducts();
+  recordAdminLog("حذف منتج", code, p.name);
+  renderProductManager();
+  toast("تم حذف المنتج");
+}
+function exportProductsFile() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("تصدير المنتجات للمطوّر فقط");
+    return;
+  }
+  recordAdminLog("تصدير المنتجات", "products.json");
+  downloadJson(
+    {
+      version: 1,
+      products: products.map(({ searchText, ...p }) => p),
+      logs: JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]"),
+      exportedAt: new Date().toISOString(),
+    },
+    "products.json",
+  );
+  toast("تم تصدير ملف المنتجات كاملًا");
+}
+async function importProductsFile(file) {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("استيراد المنتجات للمطوّر فقط");
+    return;
+  }
+  try {
+    const data = JSON.parse(await file.text()),
+      items = Array.isArray(data) ? data : data.products;
+    if (
+      !Array.isArray(items) ||
+      !items.length ||
+      items.some((p) => {
+        const w = Number(p.wholesale),
+          r = Number(p.retail);
+        return (
+          !String(p.code || "").trim() ||
+          ((!Number.isFinite(w) || w <= 0) && (!Number.isFinite(r) || r <= 0))
+        );
+      })
+    )
+      throw Error();
+    products = items.map((p) => ({
+      code: String(p.code).trim(),
+      name: String(p.name || p.code).trim(),
+      wholesale: Number(p.wholesale),
+      retail: Number(p.retail),
+      searchText: `${normalize(String(p.name || p.code).trim())} ${String(p.code).trim()}`,
+    }));
+    saveProducts();
+    recordAdminLog(
+      "استيراد المنتجات",
+      "products.json",
+      `${products.length} منتج`,
+    );
+    renderProductManager();
+    toast(`تم استيراد ${products.length} منتج`);
+  } catch (e) {
+    toast("ملف المنتجات غير صحيح");
+  }
+}
+$("#accountManageProducts").addEventListener("click", () => {
+  closeAccountMenu();
+  openProductManager();
+});
+function saveCustomers() {
+  customers = customers.map((c) => ({
+    code: String(c.code).trim(),
+    name: String(c.name || "").trim(),
+    city: String(c.city || ""),
+    phone: String(c.phone || ""),
+    address: String(c.address || ""),
+  }));
+  appStorage.setItem("bill:pwa:customers:v1", JSON.stringify(customers));
+}
+function suggestCustomerCode() {
+  let n = 1;
+  const used = new Set(customers.map((c) => String(c.code)));
+  while (used.has(String(n))) n++;
+  return String(n);
+}
+function renderCustomerManager() {
+  const box = $("#customerManagerList");
+  if (!box) return;
+  const query = normalize($("#customerManagerSearch")?.value || "");
+  const rows = customers.filter((c) => !query ||
+    normalize(`${c.name} ${c.code} ${c.city || ""} ${c.phone || ""}`).includes(
+      query,
+    ),
+  );
+  box.innerHTML = rows.length
+    ? rows
+        .map(
+          (c) =>
+            `<div class="customer-admin-row"><div><strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.code)} · ${escapeHtml(c.city || "—")} · ${escapeHtml(c.phone || "—")}</small></div><div class="user-row-actions"><button type="button" class="btn ghost small" data-customer-edit="${escapeHtml(c.code)}">تعديل</button><button type="button" class="btn danger small" data-customer-delete="${escapeHtml(c.code)}">حذف</button></div></div>`,
+        )
+        .join("")
+    : '<div class="empty-row">لا يوجد عميل مطابق</div>';
+  box
+    .querySelectorAll("[data-customer-edit]")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        editManagedCustomer(b.dataset.customerEdit),
+      ),
+    );
+  box
+    .querySelectorAll("[data-customer-delete]")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        deleteManagedCustomer(b.dataset.customerDelete),
+      ),
+    );
+  const logBox = $("#customerManagerLog");
+  if (logBox) {
+    const logs = JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]")
+      .filter((x) =>
+        /عميل|customers\.json|إدارة العملاء/.test(`${x.action} ${x.target}`),
+      )
+      .slice(0, 30);
+    logBox.innerHTML = logs.length
+      ? logs
+          .map(
+            (x) =>
+              `<div class="log-row"><strong>${escapeHtml(x.action)}</strong><span>${escapeHtml(x.target || "—")}</span><small>${escapeHtml(x.actor || "—")} · ${escapeHtml(new Date(x.time).toLocaleString("ar-EG"))}</small></div>`,
+          )
+          .join("")
+      : '<div class="empty-row">لا توجد عمليات مسجلة</div>';
+  }
+}
+function resetCustomerForm() {
+  [
+    "customerEditingCode",
+    "managedCustomerCode",
+    "managedCustomerName",
+    "managedCustomerCity",
+    "managedCustomerPhone",
+  ].forEach((id) => {
+    const el = $("#" + id);
+    if (el) el.value = "";
+  });
+  $("#customerSubmit") && ($("#customerSubmit").textContent = "إضافة العميل");
+  const code = $("#managedCustomerCode");
+  if (code) {
+    code.placeholder = suggestCustomerCode();
+    code.value = suggestCustomerCode();
+  }
+}
+function openCustomerManager() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("إدارة العملاء للمطوّر فقط");
+    return;
+  }
+  securePassword(
+    "secondary",
+    "إدارة العملاء",
+    "أدخل كلمة مرور إدارة الحساب:",
+    LIMIT_PASSWORD,
+  ).then((key) => {
+    if (key !== LIMIT_PASSWORD) return;
+    recordAdminLog("مشاهدة إدارة العملاء", "customers.json");
+    resetCustomerForm();
+    renderCustomerManager();
+    $("#customerManagerModal").classList.remove("hidden");
+    $("#customerManagerSearch").focus();
+  });
+}
+function closeCustomerManager() {
+  $("#customerManagerModal")?.classList.add("hidden");
+}
+function editManagedCustomer(code) {
+  const c = customers.find((x) => String(x.code) === String(code));
+  if (!c) return;
+  $("#customerEditingCode").value = c.code;
+  $("#managedCustomerCode").value = c.code;
+  $("#managedCustomerName").value = c.name || "";
+  $("#managedCustomerCity").value = c.city || "";
+  $("#managedCustomerPhone").value = c.phone || "";
+  $("#customerSubmit").textContent = "حفظ التعديل";
+  $("#managedCustomerName").focus();
+}
+function submitManagedCustomer(e) {
+  e.preventDefault();
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("إدارة العملاء للمطوّر فقط");
+    return;
+  }
+  const editing = $("#customerEditingCode").value.trim(),
+    code = $("#managedCustomerCode").value.trim() || suggestCustomerCode(),
+    name = $("#managedCustomerName").value.trim(),
+    city = $("#managedCustomerCity").value.trim(),
+    phone = $("#managedCustomerPhone").value.trim();
+  if (!name) {
+    $("#customerManagerError").textContent = "أدخل اسم العميل";
+    return;
+  }
+  if (
+    customers.some((c) => String(c.code) === code && String(c.code) !== editing)
+  ) {
+    $("#customerManagerError").textContent = "كود العميل محجوز لعميل آخر";
+    return;
+  }
+  const c = editing ? customers.find((x) => String(x.code) === editing) : null;
+  if (c) {
+    c.code = code;
+    c.name = name;
+    c.city = city;
+    c.phone = phone;
+    recordAdminLog("تعديل عميل", code, `الاسم: ${name}`);
+    toast("تم تعديل بيانات العميل");
+  } else {
+    customers.push({ code, name, city, phone });
+    recordAdminLog("إضافة عميل", code, `الاسم: ${name}`);
+    toast("تمت إضافة العميل");
+  }
+  saveCustomers();
+  $("#customerManagerError").textContent = "";
+  resetCustomerForm();
+  renderCustomerManager();
+}
+async function deleteManagedCustomer(code) {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("حذف العملاء للمطوّر فقط");
+    return;
+  }
+  const c = customers.find((x) => String(x.code) === String(code));
+  if (!c) return;
+  if (!(await openConfirmModal(`هل تريد حذف العميل «${c.name}»؟`))) return;
+  customers = customers.filter((x) => String(x.code) !== String(code));
+  saveCustomers();
+  recordAdminLog("حذف عميل", code, c.name);
+  renderCustomerManager();
+  toast("تم حذف العميل");
+}
+function exportCustomersFile() {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("تصدير العملاء للمطوّر فقط");
+    return;
+  }
+  recordAdminLog("تصدير العملاء", "customers.json");
+  downloadJson(
+    {
+      version: 1,
+      customers,
+      logs: JSON.parse(appStorage.getItem(ADMIN_LOG_KEY) || "[]"),
+      exportedAt: new Date().toISOString(),
+    },
+    "customers.json",
+  );
+  toast("تم تصدير ملف العملاء كاملًا");
+}
+async function importCustomersFile(file) {
+  if (!currentUser || currentUser.role !== "developer") {
+    toast("استيراد العملاء للمطوّر فقط");
+    return;
+  }
+  try {
+    const data = JSON.parse(await file.text()),
+      items = Array.isArray(data) ? data : data.customers;
+    if (
+      !Array.isArray(items) ||
+      !items.length ||
+      items.some(
+        (c) => !String(c.code || "").trim() || !String(c.name || "").trim(),
+      )
+    )
+      throw Error();
+    const codes = items.map((c) => String(c.code).trim());
+    if (new Set(codes).size !== codes.length) throw Error();
+    customers = items.map((c) => ({
+      code: String(c.code).trim(),
+      name: String(c.name).trim(),
+      city: String(c.city || ""),
+      phone: String(c.phone || ""),
+      address: String(c.address || ""),
+    }));
+    saveCustomers();
+    recordAdminLog(
+      "استيراد العملاء",
+      "customers.json",
+      `${customers.length} عميل`,
+    );
+    renderCustomerManager();
+    toast(`تم استيراد ${customers.length} عميل`);
+  } catch (e) {
+    toast("ملف العملاء غير صحيح");
+  }
+}
+$("#closeProductManager").addEventListener("click", closeProductManager);
+$("#productManagerModal").addEventListener("click", (e) => {
+  if (e.target.id === "productManagerModal") closeProductManager();
+});
+$("#productForm").addEventListener("submit", submitManagedProduct);
+$("#productManagerSearch").addEventListener("input", renderProductManager);
+$("#exportProducts").addEventListener("click", exportProductsFile);
+$("#importProducts").addEventListener("change", (e) => {
+  if (e.target.files[0]) importProductsFile(e.target.files[0]);
+  e.target.value = "";
+});
+$("#accountManageCustomers").addEventListener("click", () => {
+  closeAccountMenu();
+  openCustomerManager();
+});
+$("#closeCustomerManager").addEventListener("click", closeCustomerManager);
+$("#customerManagerModal").addEventListener("click", (e) => {
+  if (e.target.id === "customerManagerModal") closeCustomerManager();
+});
+$("#customerForm").addEventListener("submit", submitManagedCustomer);
+$("#customerManagerSearch").addEventListener("input", renderCustomerManager);
+$("#exportCustomers").addEventListener("click", exportCustomersFile);
+$("#importCustomers").addEventListener("change", (e) => {
+  if (e.target.files[0]) importCustomersFile(e.target.files[0]);
+  e.target.value = "";
+});
+const ACCEPTED_DATA_FILES = Object.freeze([
+  "product.json",
+  "products.json",
+  "users.json",
+  "customer.json",
+  "customers.json",
+  "customer_history.json",
+]);
+function dataFilePath(file) {
+  return String(file?.webkitRelativePath || file?.name || "").replaceAll(
+    "\\\\",
+    "/",
+  );
+}
+function acceptedDataFile(file) {
+  const name = String(file?.name || "").toLowerCase();
+  return name.endsWith(".mdb") || name.endsWith(".json") || name.endsWith(".xlsx") || name.endsWith(".xls");
+}
+async function readFolderFile(files, names) {
+  const wantedNames = (Array.isArray(names) ? names : [names]).map((x) =>
+    String(x).toLowerCase(),
+  );
+  const wanted = files.find((file) =>
+    wantedNames.includes(String(file.name || "").toLowerCase()),
+  );
+  return wanted ? await wanted.text() : null;
+}
+function excelValue(row, names) {
+  const keys = Object.keys(row || {});
+  const key = keys.find(k => names.some(n => String(k).trim().toLowerCase() === String(n).trim().toLowerCase())) || keys.find(k => names.some(n => String(k).trim().toLowerCase().includes(String(n).trim().toLowerCase())));
+  return key === undefined ? "" : row[key];
+}
+function normalizeExcelProduct(row) {
+  return {code: String(excelValue(row,["code","الكود","كود الصنف","item_code","product_code"])||"").trim(), name: String(excelValue(row,["name","اسم الصنف","اسم المنتج","item_name","product_name"])||"").trim(), wholesale: Number(excelValue(row,["wholesale","سعر البيع جملة","سعر البيع نصف جملة","price2"])||0)||0, retail: Number(excelValue(row,["retail","سعر البيع قطاعي","price3"])||0)||0};
+}
+async function readExcelDataFiles(files) {
+  const result = {products: [], customers: [], customerHistory: [], users: []};
+  if (!window.XLSX) return result;
+  for (const file of files.filter(f => /\.(xlsx|xls)$/i.test(String(f.name || "")))) {
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), {type: "array"});
+      for (const sheetName of workbook.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {defval: ""});
+        const name = `${file.name} ${sheetName}`.toLowerCase();
+        const keys = Object.keys(rows[0] || {}).map(k => String(k).toLowerCase());
+        const has = (...names) => names.some(n => keys.some(k => k === n || k.includes(n)));
+        if (has("username","user","password","مستخدم","كلمة")) result.users.push(...rows);
+        else if (has("customer","client","عميل","اسم العميل","cus_")) result.customers.push(...rows);
+        else if (has("history","purchase","سجل","فاتورة")) result.customerHistory.push(...rows);
+        else result.products.push(...rows.map(normalizeExcelProduct).filter(x => x.code && x.name));
+      }
+    } catch (e) { console.warn("Excel file skipped", file.name, e); }
+  }
+  return result;
+}
+async function readAllJsonDataFiles(files) {
+  const result = {
+    products: [],
+    customers: [],
+    customerHistory: [],
+    users: [],
+  };
+  for (const file of files.filter((item) =>
+    String(item?.name || "")
+      .toLowerCase()
+      .endsWith(".json"),
+  )) {
+    try {
+      const parsed = JSON.parse(await file.text()),
+        name = String(file.name || "").toLowerCase(),
+        source = Array.isArray(parsed)
+          ? parsed
+          : parsed && typeof parsed === "object"
+            ? parsed
+            : {},
+        add = (key, value) => {
+          if (Array.isArray(value)) result[key].push(...value);
+        };
+      if (name.includes("history"))
+        add(
+          "customerHistory",
+          Array.isArray(source)
+            ? source
+            : source.customerHistory ||
+                source.customer_history ||
+                source.history ||
+                source.data,
+        );
+      else if (name.includes("customer"))
+        add(
+          "customers",
+          Array.isArray(source)
+            ? source
+            : source.customers ||
+                source.customer ||
+                source.data ||
+                source.rows ||
+                source.records,
+        );
+      else if (name.includes("product") || name.includes("item"))
+        add(
+          "products",
+          Array.isArray(source)
+            ? source
+            : source.products ||
+                source.product ||
+                source.items ||
+                source.data ||
+                source.rows ||
+                source.records,
+        );
+      else if (name.includes("user") || name.includes("account"))
+        add(
+          "users",
+          Array.isArray(source)
+            ? source
+            : source.users ||
+                source.user ||
+                source.accounts ||
+                source.data ||
+                source.rows ||
+                source.records,
+        );
+      else {
+        add("products", source.products);
+        add("customers", source.customers);
+        add(
+          "customerHistory",
+          source.customerHistory || source.customer_history || source.history,
+        );
+        add("users", source.users);
+      }
+    } catch (e) {
+      console.warn("JSON file skipped", file.name, e);
+    }
+  }
+  return result;
+}
+function parseDataFile(text, key) {
+  if (!text) return null;
+  try {
+    const data = JSON.parse(text);
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== "object") return null;
+    const aliases = [
+      key,
+      key.endsWith("s") ? key.slice(0, -1) : key,
+      `${key}s`,
+      "data",
+      "rows",
+      "records",
+    ];
+    const found = Object.keys(data).find((name) =>
+      aliases.some(
+        (alias) => String(name).toLowerCase() === String(alias).toLowerCase(),
+      ),
+    );
+    return found && Array.isArray(data[found]) ? data[found] : null;
+  } catch (e) {
+    return null;
+  }
+}
+function updateDataFolderStatus(found, rejected, hasMdb) {
+  const status = $("#dataFolderStatus");
+  if (!status) return;
+  const lines = [];
+  if (found.length)
+    lines.push(
+      `<strong>الملفات المعتمدة:</strong> ${found.map((x) => escapeHtml(x)).join(" · ")}`,
+    );
+  if (rejected.length)
+    lines.push(
+      `<strong class="data-folder-rejected">تم تجاهل:</strong> ${rejected.map((x) => escapeHtml(x)).join(" · ")}`,
+    );
+  if (hasMdb)
+    lines.push(
+      "<small>تم تحديد database.mdb؛ ستتم معالجته تلقائيًا داخل التطبيق.</small>",
+    );
+  status.innerHTML =
+    lines.join("<br>") || "لم يتم العثور على ملف قاعدة بيانات معتمد";
+}
+function findMdbTable(reader, names) {
+  let tableNames = [];
+  try {
+    tableNames = reader.getTableNames({ normalTables: true });
+  } catch (e) {
+    return null;
+  }
+  const wanted = names.map((x) => x.toLowerCase());
+  const match = tableNames.find((name) => wanted.includes(String(name).toLowerCase())) || tableNames.find((name) => {
+    try { const rows = reader.getTable(name).getData(); const keys = Object.keys(rows[0] || {}).map(k => String(k).toLowerCase()); return keys.some(k => ["اسم الصنف","item_name","product_name","اسم المورد","الكود","code"].includes(k)); } catch(e) { return false; }
+  });
+  return match ? reader.getTable(match) : null;
+}
+function mdbColumn(row, names) {
+  const keys = Object.keys(row || {});
+  const wanted = names.map((x) => x.toLowerCase());
+  const key = keys.find((k) => wanted.includes(String(k).toLowerCase())) || keys.find((k) => wanted.some(w => String(k).toLowerCase().includes(w)));
+  return key === undefined ? null : row[key];
+}
+async function readMdb(file) {
+  if (
+    !file ||
+    !String(file.name || "")
+      .toLowerCase()
+      .endsWith(".mdb")
+  )
+    throw Error("ملف MDB غير صالح");
+  if (!window.MDBReader) throw Error("محرك MDB غير متاح داخل التطبيق");
+  const buffer = await file.arrayBuffer(),
+    reader = new window.MDBReader(window.Buffer.from(buffer));
+  const safeTable = (names) => {
+    try {
+      return findMdbTable(reader, names);
+    } catch (e) {
+      return null;
+    }
+  };
+  const itemTable = safeTable([
+    "Items_Names",
+    "Items",
+    "Products",
+    "Product",
+    "product",
+  ]);
+  const customerTable = safeTable([
+    "Cus_Names",
+    "Customers",
+    "Customer",
+    "customer",
+  ]);
+  const userTable = safeTable([
+    "Users",
+    "User",
+    "Accounts",
+    "users",
+    "account",
+  ]);
+  const historyTable = safeTable([
+    "Customer_History",
+    "CustomerHistory",
+    "Customers_History",
+    "Sales_History",
+    "Purchase_History",
+    "Purchases",
+    "Invoice_Items",
+    "customer_history",
+    "history",
+  ]);
+  const rows = (table) => {
+    try {
+      return table ? table.getData() : [];
+    } catch (e) {
+      return [];
+    }
+  };
+  const number = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const mdbProducts = rows(itemTable)
+    .map((row) => ({
+      code: String(
+        mdbColumn(row, [
+          "I_Code",
+          "Code",
+          "Item_Code",
+          "Product_Code", "الكود", "كود الصنف",
+          "code",
+        ]) ?? "",
+      ).trim(),
+      name: String(
+        mdbColumn(row, [
+          "I_Name",
+          "Name",
+          "Item_Name",
+          "Product_Name", "اسم الصنف", "اسم المنتج",
+          "name",
+        ]) ?? "",
+      ).trim(),
+      wholesale: number(
+        mdbColumn(row, [
+          "I_S_Price_W",
+          "Wholesale",
+          "Price2",
+          "User2",
+          "wholesale", "سعر البيع جملة", "سعر البيع نصف جملة",
+        ]),
+      ),
+      retail: number(
+        mdbColumn(row, ["I_S_Price_P", "Retail", "Price3", "User3", "retail", "سعر البيع قطاعي"]),
+      ),
+    }))
+    .filter((x) => x.code);
+  const mdbCustomers = rows(customerTable)
+    .map((row) => ({
+      code: String(
+        mdbColumn(row, ["Cus_Code", "Code", "Customer_Code", "code"]) ?? "",
+      ).trim(),
+      name: String(
+        mdbColumn(row, ["Cus_Name", "Name", "Customer_Name", "name"]) ?? "",
+      ).trim(),
+      city: String(mdbColumn(row, ["Cus_City", "City", "city"]) ?? "").trim(),
+      address: String(
+        mdbColumn(row, ["Cus_Address", "Address", "address"]) ?? "",
+      ).trim(),
+      phone: String(
+        mdbColumn(row, ["Tel_1", "Phone", "Tel", "phone"]) ?? "",
+      ).trim(),
+    }))
+    .filter((x) => x.code);
+  const mdbHistory = rows(historyTable)
+    .map((row) => ({
+      customerCode: String(
+        mdbColumn(row, [
+          "Customer_Code",
+          "Cus_Code",
+          "CustomerCode",
+          "Code",
+          "customer_code",
+        ]) ?? "",
+      ).trim(),
+      invoiceCount:
+        Number(
+          mdbColumn(row, [
+            "Invoice_Count",
+            "InvoiceCount",
+            "Count",
+            "invoice_count",
+          ]) || 1,
+        ) || 1,
+      items: [
+        {
+          code: String(
+            mdbColumn(row, [
+              "I_Code",
+              "Item_Code",
+              "Product_Code",
+              "ProductCode",
+              "code",
+            ]) ?? "",
+          ).trim(),
+          name: String(
+            mdbColumn(row, ["I_Name", "Item_Name", "Product_Name", "name"]) ??
+              "",
+          ).trim(),
+          lastPrice:
+            Number(
+              mdbColumn(row, ["Price", "Unit_Price", "Last_Price", "price"]) ||
+                0,
+            ) || 0,
+          lastQty:
+            Number(
+              mdbColumn(row, ["Qty", "Quantity", "Last_Qty", "quantity"]) || 0,
+            ) || 0,
+          mode: String(
+            mdbColumn(row, ["Mode", "Price_Mode", "mode"]) || "wholesale",
+          ),
+        },
+      ],
+    }))
+    .filter((x) => x.customerCode && x.items[0].code);
+  const mdbUsers = rows(userTable)
+    .map((row) => ({
+      username: String(
+        mdbColumn(row, ["Username", "UserName", "Login", "Name", "username"]) ??
+          "",
+      ).trim(),
+      password: String(
+        mdbColumn(row, ["Password", "Pass", "UserPassword", "password"]) ?? "",
+      ),
+      role:
+        String(
+          mdbColumn(row, ["Role", "Type", "role"]) ?? "user",
+        ).toLowerCase() === "developer"
+          ? "developer"
+          : "user",
+      active: mdbColumn(row, ["Active", "Enabled", "active"]) !== false,
+    }))
+    .filter((x) => x.username && x.password);
+  let tables = [];
+  try {
+    tables = reader.getTableNames({ normalTables: true });
+  } catch (e) {}
+  return {
+    products: mdbProducts,
+    customers: mdbCustomers,
+    users: mdbUsers,
+    customerHistory: mdbHistory,
+    tables,
+  };
+}
+async function restoreSelectedDataFolder() {
+  try {
+    const saved = await idbReadDatabaseFiles();
+    if (!saved.records.length) return false;
+    const restored = saved.records.map((record) => {
+      const file = new File([record.blob], record.name, {
+        type: record.type || "application/octet-stream",
+        lastModified: record.lastModified || Date.now(),
+      });
+      try {
+        Object.defineProperty(file, "webkitRelativePath", {
+          value: record.path || record.name,
+        });
+      } catch (e) {}
+      return file;
+    });
+    return await loadSelectedDataFolder(restored, true);
+  } catch (e) {
+    return false;
+  }
+}
+async function loadSelectedDataFolder(files, fromStorage = false) {
+  const list = [...files];
+  const accepted = list.filter(acceptedDataFile);
+  const rejected = list
+    .filter((file) => !acceptedDataFile(file))
+    .map(dataFilePath);
+  const found = accepted.map(dataFilePath);
+  const mdb = accepted.find((file) =>
+    String(file.name || "")
+      .toLowerCase()
+      .endsWith(".mdb"),
+  );
+  const status = $("#dataFolderStatus");
+  dataFolderReady = false;
+  if (status) status.textContent = "جاري فحص ملفات قاعدة البيانات...";
+  if (!accepted.length) {
+    updateDataFolderStatus([], rejected, false);
+    toast("المجلد لا يحتوي على ملفات قاعدة بيانات معتمدة");
+    return false;
+  }
+  try {
+    let mdbResult = null;
+    if (mdb) {
+      mdbResult = await readMdb(mdb);
+      mdbSelected = true;
+    } else {
+      mdbSelected = false;
+    }
+    const jsonData = await readAllJsonDataFiles(accepted);
+    const excelData = await readExcelDataFiles(accepted);
+    jsonData.products.push(...excelData.products); jsonData.customers.push(...excelData.customers); jsonData.customerHistory.push(...excelData.customerHistory); jsonData.users.push(...excelData.users);
+    const folderProducts = jsonData.products;
+    const folderCustomers = jsonData.customers;
+    const folderHistory = [
+      ...(jsonData.customerHistory || []),
+      ...(mdbResult?.customerHistory || []),
+    ];
+    const folderUsers = [
+      ...(jsonData.users || []),
+      ...(mdbResult?.users || []),
+    ];
+    const finalProducts = mdbResult?.products?.length
+      ? mdbResult.products
+      : folderProducts;
+    const finalCustomers = mdbResult?.customers?.length
+      ? mdbResult.customers
+      : folderCustomers;
+    if (finalProducts?.length) {
+      appStorage.setItem(PRODKEY, JSON.stringify(finalProducts));
+      products = [];
+    }
+    if (finalCustomers?.length) {
+      appStorage.setItem(
+        "bill:pwa:customers:v1",
+        JSON.stringify(finalCustomers),
+      );
+      customers = [];
+    }
+    if (folderHistory?.length) {
+      appStorage.setItem(
+        "bill:pwa:customer-history:v1",
+        JSON.stringify(folderHistory),
+      );
+      customerHistory = folderHistory;
+    }
+    if (folderUsers?.length) {
+      usersFileUsers = folderUsers
+        .filter(
+          (user) =>
+            user &&
+            String(user.username || "").trim() &&
+            typeof user.password !== "undefined" &&
+            user.username !== DEVELOPER_USERNAME,
+        )
+        .map((user) => ({
+          ...user,
+          username: String(user.username).trim(),
+          password: String(user.password),
+          role: user.role === "developer" ? "developer" : "user",
+          active: user.active !== false,
+        }));
+      usersFileReady = true;
+      saveUsers(usersFileUsers);
+    } else {
+      usersFileUsers = [];
+      usersFileReady = false;
+    }
+    if (!fromStorage) {
+      const records = accepted.map((file, index) => ({
+        id: `${String(file.name || "").toLowerCase()}::${index}`,
+        name: String(file.name || ""),
+        path: dataFilePath(file),
+        type: file.type || "application/octet-stream",
+        lastModified: file.lastModified || Date.now(),
+        blob: file,
+      }));
+      idbReplaceDatabaseFiles(records, {
+        paths: found,
+        selectedAt: new Date().toISOString(),
+      });
+    }
+    await loadProducts();
+    await loadCustomers();
+    dataFolderReady = true;
+    updateDataFolderStatus(found, rejected, Boolean(mdb));
+    toast("تمت قراءة ملفات قاعدة البيانات بنجاح");
+    return true;
+  } catch (error) {
+    dataFolderReady = false;
+    if (status)
+      status.innerHTML = `<strong>فشل قراءة قاعدة البيانات:</strong> ${escapeHtml(error.message || "ملف غير صالح")}`;
+    toast("تعذر قراءة ملفات قاعدة البيانات");
+    return false;
+  }
+}
+function normalizeDataRecord(value, fallback = "") {
+  return value === null || value === undefined || String(value).trim() === ""
+    ? fallback
+    : String(value).trim();
+}
+function safeJson(raw, fallback) {
+  try {
+    const x = JSON.parse(raw);
+    return x ?? fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+async function loadProductsFromStorage() {
+  return loadProducts();
+}
+async function loadCustomersFromStorage() {
+  return loadCustomers();
+}
+initIndexedStorage().then(async () => {
+  await loadBundledDatabase();
+  await restoreSelectedDataFolder();
+  syncProgramLock();
+  updatePriceLimitLabel();
+  restoreSession();
+  if (!usersFileReady && !appStorage.getItem(USERS_KEY)) toast("لم يتم العثور على users؛ اختر ملف users.json أو Excel من زر قاعدة البيانات");
+  syncUnlockButton();
+  syncCentralDevice();
+  setInterval(syncCentralDevice, 15 * 60 * 1000);
+  setDate();
+  loadProductsFromStorage();
+  loadCustomersFromStorage();
+  renderCart();
+  renderSaved();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("sw.js")
+      .then(watchForUpdates)
+      .catch(() => {});
+    navigator.serviceWorker.ready.then((reg) => reg.update());
+  }
 });
