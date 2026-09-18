@@ -172,7 +172,7 @@ td strong{color:var(--navy)}
 .auth-extra-actions #deviceUnlockButton{order:3!important;width:100%!important;height:54px!important;min-height:54px!important;max-height:54px!important;margin:0!important;box-sizing:border-box!important}
 
 /* ===================== MODAL / FULL-PAGE DIALOGS (final !important) ===================== */
-.modal{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;min-height:100dvh!important;z-index:var(--z-modal);display:flex!important;align-items:stretch!important;justify-content:stretch!important;padding:0!important;background:#f7f9fc!important;isolation:isolate}
+.modal{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;min-height:100dvh!important;z-index:var(--modal-z,var(--z-modal));display:flex!important;align-items:stretch!important;justify-content:stretch!important;padding:0!important;background:#f7f9fc!important;isolation:isolate}
 .modal-card,.user-manager-card,.product-manager-card,.devices-card,.account-menu-card,.scanner-card{width:100%!important;max-width:none!important;min-width:100%!important;min-height:100dvh!important;height:100dvh!important;max-height:none!important;margin:0!important;padding:clamp(20px,4vw,48px) clamp(18px,6vw,96px)!important;border:0!important;border-radius:0!important;box-shadow:none!important;overflow-y:auto!important;background:#fff!important;box-sizing:border-box}
 .modal-card>*,.user-manager-card>*,.product-manager-card>*,.devices-card>*{max-width:1180px;margin-left:auto;margin-right:auto}
 .modal-card h2{font-size:clamp(24px,3vw,36px)!important;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:20px!important}
@@ -363,7 +363,10 @@ td strong{color:var(--navy)}
 
 
 
-
+/* ✅ نافذة التأكيد فوق كل النوافذ الأخرى */
+#confirmModal{
+  z-index: 9999 !important;
+}
 /* Fix: زر إلغاء الحظر يختفي لما الجهاز مش محظور */
 .auth-extra-actions button.hidden,
 .auth-extra-actions .btn.hidden,
@@ -372,3 +375,50 @@ td strong{color:var(--navy)}
   visibility:hidden!important;
   pointer-events:none!important;
 }
+/* ===================== GUEST MODE ===================== */
+.guest-btn{
+  background:#f1c40f!important;
+  color:#3a2c00!important;
+  border:0!important;
+  font-weight:800;
+}
+.guest-btn:hover{background:#e0b400!important}
+.guest-btn:disabled{opacity:.6;cursor:not-allowed}
+
+.guest-banner{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;
+  background:#fff8e1;border:1.5px solid #f1c40f;border-radius:14px;
+  padding:11px 16px;margin-bottom:14px;
+  color:#7a5d00;font-weight:800;font-size:14px;
+  box-shadow:0 6px 18px #f1c40f22;
+}
+.guest-banner strong{
+  font-family:'Courier New',monospace;
+  font-size:19px;color:#b8860b;
+  padding:2px 10px;background:#fff;border-radius:8px;letter-spacing:.06em;
+}
+.guest-banner.hidden{display:none!important}
+
+@media(max-width:480px){
+  .guest-banner{font-size:12px;padding:9px 12px}
+  .guest-banner strong{font-size:16px}
+}
+
+/* بداية إضافات إدارة الصلاحيات وجرد المخزون */
+.permission-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:8px 0 18px}
+.permission-list label{padding:11px;border:1.5px solid var(--line);border-radius:11px;background:#fbfcfe}
+.inventory-table-wrap{max-height:48vh;overflow:auto;margin-top:14px}
+#inventoryTable{min-width:1120px}
+#inventoryTable input{min-width:96px;padding:8px 9px}
+#inventoryTable .inventory-name{min-width:220px}
+.inventory-code{display:block;color:var(--muted);font-size:10px;margin-top:4px;direction:ltr;text-align:right}
+.inventory-add-product{width:18px!important;min-width:18px!important;height:18px;accent-color:var(--navy)}
+@media(max-width:650px){.permission-list{grid-template-columns:1fr}}
+/* نهاية إضافات إدارة الصلاحيات وجرد المخزون */
+
+.password-input-wrap{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:8px}.password-input-wrap input{flex:1;margin:0!important}.password-eye{width:42px;height:42px;border:1px solid var(--line);border-radius:10px;background:#f7fafc;color:var(--navy);font-weight:800;cursor:pointer}.employee-row{display:flex;justify-content:space-between;gap:14px;background:#f4f7fb;border:1px solid #dce5ef;border-radius:10px;padding:12px}.employee-row small{display:block;color:#627083;margin-top:4px}.employee-row .user-row-actions{flex-shrink:0}
+
+.data-load-progress{margin-top:10px;padding:10px;border:1px solid var(--border,#ddd);border-radius:10px;background:var(--surface,#fff)}
+.progress-label,.progress-percent{font-size:.85rem;color:var(--muted,#666)}
+.progress-bar{height:8px;background:#e9edf2;border-radius:9px;overflow:hidden;margin:7px 0}.progress-fill{height:100%;width:0;background:#2f7df6;transition:width .2s ease}
