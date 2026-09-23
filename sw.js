@@ -1,11 +1,10 @@
 /* بداية التخزين المؤقت لنسخة PWA */
-const CACHE = "invoice-program-v20260914f";
+const CACHE = "invoice-program-v20260921-ui-fixes2";
 const ASSETS = [
-  "./", "./index.html", "./style.css", "./central-config.js", "./app.js?rev=20260914f",
-  "./search-worker.js", "./manifest.json", "./logo.png",
+  "./", "./index.html", "./style.css", "./js/central-config.js", "./js/native-bridge.js", "./js/export-module.js", "./js/invoice-data.js", "./js/employees.js", "./js/payroll.js", "./js/inventory.js", "./js/app.js?rev=20260921-ui-fixes2",
+  "./js/search-worker.js", "./js/json-worker.js", "./js/sync.js", "./manifest.json", "./logo.png",
   "./fonts/cairo-400.ttf", "./fonts/cairo-600.ttf", "./fonts/cairo-700.ttf", "./fonts/cairo-800.ttf",
   "./vendor/zxing-browser.min.js", "./vendor/jsQR.js", "./vendor/mdb-reader.min.js", "./vendor/xlsx.full.min.js",
-  "./Database/products.json", "./Database/customers.json", "./Database/customer_history.json", "./Database/users.json"
 ];
 self.addEventListener("install", (event) => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);

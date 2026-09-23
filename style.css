@@ -125,9 +125,10 @@ td strong{color:var(--navy)}
 .saved-details{flex:1;min-width:0}
 
 /* ===================== TOAST / MISC ===================== */
-.toast{position:fixed;bottom:24px;right:50%;transform:translateX(50%) translateY(16px);opacity:0;background:var(--navy2);color:#fff;border-radius:999px;padding:11px 17px;font-size:13px;transition:.2s;pointer-events:none;z-index:var(--z-toast)}
+.toast{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));right:50%;max-width:min(92vw,420px);transform:translateX(50%) translateY(16px);opacity:0;background:var(--navy2);color:#fff;border-radius:999px;padding:11px 17px;font-size:13px;line-height:1.7;text-align:center;white-space:normal;transition:.2s;pointer-events:none;z-index:var(--z-toast)}
 .toast.show{opacity:1;transform:translateX(50%) translateY(0)}
 .hidden{display:none!important}
+.export-button-grid{display:grid;gap:10px;margin:14px 0}.export-button-grid strong{color:var(--navy);font-size:13px}.export-button-grid .modal-actions{justify-content:flex-start}
 .brand-lockup{display:flex;align-items:center;gap:10px}
 .brand-logo{width:46px;height:46px;object-fit:contain;border-radius:50%;background:#fff}
 .contact-footer{text-align:center;color:var(--muted);font-size:12px;font-weight:700;padding:8px 0 18px}
@@ -345,6 +346,7 @@ td strong{color:var(--navy)}
   .print-total{font-size:11px;margin:0;white-space:nowrap;font-weight:800}
   .print-notes{font-size:10px;margin:0;padding:0;line-height:1.5;text-align:center;flex:1;border:0;min-height:24px}
   .print-notes b{margin-left:6px}
+  .print-user-notes{display:block;margin:0 0 8px;padding:0 4px;text-align:right;direction:rtl;line-height:1.7;white-space:pre-wrap}
   .print-terms{font-size:11px;font-weight:600;line-height:1.8;text-align:center;margin-top:12px;background:#fff!important;color:#111}
   .print-terms div{white-space:normal;line-height:1.8}
   .print-payment{display:flex;justify-content:space-between;gap:20px;border:1px solid #222;padding:6px;margin-top:6px}
@@ -422,3 +424,96 @@ td strong{color:var(--navy)}
 .data-load-progress{margin-top:10px;padding:10px;border:1px solid var(--border,#ddd);border-radius:10px;background:var(--surface,#fff)}
 .progress-label,.progress-percent{font-size:.85rem;color:var(--muted,#666)}
 .progress-bar{height:8px;background:#e9edf2;border-radius:9px;overflow:hidden;margin:7px 0}.progress-fill{height:100%;width:0;background:#2f7df6;transition:width .2s ease}
+
+/* ==================== بداية ثبات شاشة الدخول مع لوحة المفاتيح ==================== */
+@media (max-width: 650px) {
+  .auth-gate { height: 100%; min-height: 100svh; align-items: flex-start !important; overflow-y: auto; }
+  .auth-card { min-height: 100%; height: auto !important; justify-content: flex-start !important; padding: max(24px, env(safe-area-inset-top)) 20px 28px !important; }
+  .auth-card input:focus { scroll-margin-top: 18px; }
+}
+/* ==================== نهاية ثبات شاشة الدخول مع لوحة المفاتيح ==================== */
+
+/* ==================== بداية تنسيق بيانات الطباعة والملاحظات ==================== */
+@media print {
+  .print-info-list { display: grid !important; grid-template-columns: 1fr !important; gap: 0 24px !important; background: #fff !important; border: 0 !important; padding: 3px 7px !important; margin: 0 0 5px !important; color: #111 !important; }
+  .print-info-list > div { display: flex; gap: 6px; align-items: baseline; min-height: 20px; border-bottom: 0 !important; background: #fff !important; }
+  .print-info-list > div b { min-width: 82px; text-align: right; }
+  .print-info-list > div span { flex: 1; text-align: right; white-space: normal; overflow-wrap: anywhere; }
+  .print-bottom { margin-top: 18px !important; }
+  .print-user-notes { width: min(78%, 520px) !important; margin: 12px auto 0 !important; padding: 7px 10px !important; border: 1px solid #999 !important; text-align: right !important; line-height: 1.7 !important; white-space: pre-wrap !important; }
+}
+/* ==================== نهاية تنسيق بيانات الطباعة والملاحظات ==================== */
+
+/* ==================== بداية رقم الفاتورة وحقول الطباعة الجديدة ==================== */
+.invoice-lookup { display:flex; gap:6px; align-items:center; }
+.invoice-lookup input { width:130px; }
+@media print {
+  .print-head { position:relative; justify-content:center !important; border-bottom:0 !important; margin:12px 0 0 !important; padding:0 !important; display:flex !important; flex-direction:column !important; gap:8px !important; }
+  .print-head h1 { display:none !important; }
+  .print-invoice-label, .print-invoice-number { display:block !important; box-sizing:border-box; width:180px; margin:0 auto; text-align:center; border:1px solid #555 !important; background:#fff !important; }
+  .print-invoice-label { padding:5px 8px !important; font-weight:800; font-size:13px; }
+  .print-invoice-number { padding:7px 8px !important; font-size:19px; font-weight:800; direction:ltr; }
+  .print-info-grid { display:grid !important; grid-template-columns:1fr 1fr 1fr !important; gap:8px 22px !important; border:0 !important; background:transparent !important; padding:18px 4px 14px !important; margin:0 0 12px !important; }
+  .print-info-grid > div { display:flex; gap:6px; min-height:23px; border:0 !important; background:transparent !important; white-space:nowrap; align-items:baseline; }
+  .print-info-grid b { font-weight:700; }
+  .print-info-grid span { overflow:hidden; text-overflow:ellipsis; }
+  .print-user-notes { border:0 !important; background:transparent !important; }
+}
+/* ==================== نهاية رقم الفاتورة وحقول الطباعة الجديدة ==================== */
+
+/* ==================== بداية تنسيق جدول كشف الرواتب ==================== */
+.payroll-table-wrap { overflow-x:auto; margin-top:14px; }
+.payroll-table { width:100%; min-width:1180px; border-collapse:collapse; background:#fff; }
+.payroll-table th, .payroll-table td { border:1px solid var(--line,#d7e0ea); padding:8px 6px; text-align:center; vertical-align:middle; }
+.payroll-table th { background:#eef3f8; color:var(--navy,#12355b); white-space:nowrap; }
+.payroll-table td:first-child, .payroll-table td:nth-child(2) { text-align:right; white-space:nowrap; font-weight:700; }
+.payroll-cell-label { display:flex; flex-direction:column; gap:3px; align-items:center; font-size:11px; color:var(--muted,#627083); }
+.payroll-cell-label input { width:82px; min-width:82px; padding:6px 4px; text-align:center; }
+.payroll-number { font-weight:800; white-space:nowrap; }
+@media(max-width:700px) { .payroll-table-wrap { margin-left:-10px; margin-right:-10px; } }
+/* ==================== نهاية تنسيق جدول كشف الرواتب ==================== */
+
+/* ==================== بداية توضيحات حقول الموظفين وتحسين الرواتب ==================== */
+.field-help{display:block;color:var(--muted,#627083);font-size:11px;line-height:1.5;font-weight:600;margin-top:2px}
+.payroll-help{background:#f6f9fc;border:1px solid var(--line,#d7e0ea);border-radius:10px;padding:9px 11px;margin:8px 0 12px}
+/* ==================== نهاية توضيحات حقول الموظفين وتحسين الرواتب ==================== */
+
+@media print{#printSheet .payroll-print-page{break-after:auto!important;page-break-after:auto!important}.payroll-print-page h2{text-align:center;margin:0 0 12px}.payroll-print-page .print-table th,.payroll-print-page .print-table td{border:1px solid #222;padding:6px;text-align:center}}
+
+/* ==================== بداية منع فراغ لوحة المفاتيح على مستوى التطبيق ==================== */
+/* لا نغيّر ارتفاع النوافذ إلى ارتفاع لوحة المفاتيح؛ نترك WebView يعيد قياس
+   النافذة، ونكتفي بجعل محتوى النافذة قابلا للتمرير أثناء الكتابة. */
+@media (max-width:650px){
+  html.keyboard-open .modal-card,
+  html.keyboard-open .product-lookup-card{
+    max-height:calc(100dvh - 12px)!important;
+    overflow-y:auto!important;
+    overscroll-behavior:contain;
+  }
+  html.keyboard-open .modal,
+  html.keyboard-open .product-lookup-modal{
+    overflow:hidden!important;
+  }
+  html.keyboard-open #productLookupInput{scroll-margin-top:12px;scroll-margin-bottom:24px}
+}
+/* ==================== نهاية منع فراغ لوحة المفاتيح على مستوى التطبيق ==================== */
+/* ==================== بداية تثبيت حقول شاشة الدخول أثناء لوحة المفاتيح ==================== */
+/* هذا التعديل خاص بشاشة الدخول فقط ولا يغير ارتفاع الإدارات أو النوافذ الأخرى. */
+@media (max-width:650px){
+  html.keyboard-open .auth-gate{
+    height:var(--keyboard-vh,100dvh)!important;
+    min-height:0!important;
+    align-items:flex-start!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+  }
+  html.keyboard-open .auth-card{
+    height:auto!important;
+    min-height:0!important;
+    justify-content:flex-start!important;
+    padding:max(16px,env(safe-area-inset-top)) 20px 24px!important;
+  }
+  html.keyboard-open #loginUsername,
+  html.keyboard-open #loginPassword{scroll-margin-top:18px;scroll-margin-bottom:24px}
+}
+/* ==================== نهاية تثبيت حقول شاشة الدخول أثناء لوحة المفاتيح ==================== */
